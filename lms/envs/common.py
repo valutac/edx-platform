@@ -1936,6 +1936,9 @@ INSTALLED_APPS = (
     'pipeline',
     'static_replace',
 
+    # For component views
+    'django_component_views',
+
     # For content serving
     'openedx.core.djangoapps.contentserver',
 
