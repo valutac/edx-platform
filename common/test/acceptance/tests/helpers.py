@@ -74,7 +74,7 @@ def is_youtube_available():
     # TODO: Design and implement a better solution that is reliable and repeatable,
     # reflects how the application works in production, and limits the third-party
     # network traffic (e.g. repeatedly retrieving the js from youtube from the browser).
-    return False
+    return True
 
 
 def is_focused_on_element(browser, selector):
