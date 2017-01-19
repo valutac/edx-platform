@@ -93,7 +93,7 @@ class StubYouTubeHandler(StubHttpRequestHandler):
 
         elif 'get_youtube_api' in self.path:
             # Delay the response to simulate network latency
-            time.sleep(0.8)
+            time.sleep(self.server.config.get('time_to_response', self.DEFAULT_DELAY_SEC))
             if self.server.config.get('youtube_api_blocked'):
                 self.send_response(404, content='', headers={'Content-type': 'text/plain'})
             else:
