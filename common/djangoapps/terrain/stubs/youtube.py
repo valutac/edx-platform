@@ -30,7 +30,7 @@ class StubYouTubeHandler(StubHttpRequestHandler):
     """
 
     # Default number of seconds to delay the response to simulate network latency.
-    DEFAULT_DELAY_SEC = 0.5
+    DEFAULT_DELAY_SEC = 1.5
 
     def do_DELETE(self):  # pylint: disable=invalid-name
         """
