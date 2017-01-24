@@ -98,8 +98,13 @@ function($, Backbone, _, gettext, HtmlUtils, StringUtils, XBlockUtils, MoveXBloc
                 this.childrenInfo.children = [];
             }
 
+            this.validateMoveOperation();
             this.setDisplayedXBlocksCategories();
             this.render();
+        },
+
+        validateMoveOperation: function() {
+            Backbone.trigger('move:validateMoveOperation', this.parent_info.parent);
         },
 
         setDisplayedXBlocksCategories: function() {
