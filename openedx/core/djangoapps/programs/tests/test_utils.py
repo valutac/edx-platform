@@ -20,12 +20,13 @@ from pytz import utc
 
 from lms.djangoapps.certificates.api import MODES
 from lms.djangoapps.commerce.tests.test_utils import update_commerce_config
+from openedx.core.djangoapps.catalog.tests import factories
 from openedx.core.djangoapps.content.course_overviews.models import CourseOverview
 from openedx.core.djangoapps.credentials.tests.mixins import CredentialsApiConfigMixin, CredentialsDataMixin
 from openedx.core.djangoapps.programs import utils
 from openedx.core.djangoapps.programs.models import ProgramsApiConfig
-from openedx.core.djangoapps.programs.tests import factories
-from openedx.core.djangoapps.programs.tests.mixins import ProgramsApiConfigMixin, ProgramsDataMixin
+from openedx.core.djangoapps.programs.tests.factories import ProgressFactory
+from openedx.core.djangoapps.programs.tests.mixins import ProgramsApiConfigMixin
 from openedx.core.djangolib.testing.utils import CacheIsolationTestCase, skip_unless_lms
 from student.tests.factories import UserFactory, CourseEnrollmentFactory
 from util.date_utils import strftime_localized
@@ -37,87 +38,6 @@ UTILS_MODULE = 'openedx.core.djangoapps.programs.utils'
 CERTIFICATES_API_MODULE = 'lms.djangoapps.certificates.api'
 ECOMMERCE_URL_ROOT = 'https://example-ecommerce.com'
 MARKETING_URL = 'https://www.example.com/marketing/path'
-
-
-@ddt.ddt
-@attr(shard=2)
-@httpretty.activate
-@skip_unless_lms
-class TestProgramRetrieval(ProgramsApiConfigMixin, ProgramsDataMixin, CredentialsDataMixin,
-                           CredentialsApiConfigMixin, CacheIsolationTestCase):
-    """Tests covering the retrieval of programs from the Programs service."""
-
-    ENABLED_CACHES = ['default']
-
-    def setUp(self):
-        super(TestProgramRetrieval, self).setUp()
-
-        ClientFactory(name=ProgramsApiConfig.OAUTH2_CLIENT_NAME, client_type=CONFIDENTIAL)
-        self.user = UserFactory()
-
-        cache.clear()
-
-    def test_get_programs(self):
-        """Verify programs data can be retrieved."""
-        self.create_programs_config()
-        self.mock_programs_api()
-
-        actual = utils.get_programs(self.user)
-        self.assertEqual(
-            actual,
-            self.PROGRAMS_API_RESPONSE['results']
-        )
-
-        # Verify the API was actually hit (not the cache).
-        self.assertEqual(len(httpretty.httpretty.latest_requests), 1)
-
-    def test_get_programs_caching(self):
-        """Verify that when enabled, the cache is used for non-staff users."""
-        self.create_programs_config(cache_ttl=1)
-        self.mock_programs_api()
-
-        # Warm up the cache.
-        utils.get_programs(self.user)
-
-        # Hit the cache.
-        utils.get_programs(self.user)
-
-        # Verify only one request was made.
-        self.assertEqual(len(httpretty.httpretty.latest_requests), 1)
-
-        staff_user = UserFactory(is_staff=True)
-
-        # Hit the Programs API twice.
-        for _ in range(2):
-            utils.get_programs(staff_user)
-
-        # Verify that three requests have been made (one for student, two for staff).
-        self.assertEqual(len(httpretty.httpretty.latest_requests), 3)
-
-    def test_get_programs_programs_disabled(self):
-        """Verify behavior when programs is disabled."""
-        self.create_programs_config(enabled=False)
-
-        actual = utils.get_programs(self.user)
-        self.assertEqual(actual, [])
-
-    @mock.patch('edx_rest_api_client.client.EdxRestApiClient.__init__')
-    def test_get_programs_client_initialization_failure(self, mock_init):
-        """Verify behavior when API client fails to initialize."""
-        self.create_programs_config()
-        mock_init.side_effect = Exception
-
-        actual = utils.get_programs(self.user)
-        self.assertEqual(actual, [])
-        self.assertTrue(mock_init.called)
-
-    def test_get_programs_data_retrieval_failure(self):
-        """Verify behavior when data can't be retrieved from Programs."""
-        self.create_programs_config()
-        self.mock_programs_api(status_code=500)
-
-        actual = utils.get_programs(self.user)
-        self.assertEqual(actual, [])
 
 
 @skip_unless_lms
@@ -340,7 +260,7 @@ class TestProgramProgressMeter(ProgramsApiConfigMixin, TestCase):
         self.assertEqual(meter.engaged_programs(), [program])
         self._assert_progress(
             meter,
-            factories.Progress(
+            ProgressFactory(
                 id=program['id'],
                 in_progress=self._extract_names(program, 0)
             )
@@ -387,8 +307,8 @@ class TestProgramProgressMeter(ProgramsApiConfigMixin, TestCase):
         self.assertEqual(meter.engaged_programs(), programs)
         self._assert_progress(
             meter,
-            factories.Progress(id=programs[0]['id'], in_progress=self._extract_names(programs[0], 0)),
-            factories.Progress(id=programs[1]['id'], in_progress=self._extract_names(programs[1], 0))
+            ProgressFactory(id=programs[0]['id'], in_progress=self._extract_names(programs[0], 0)),
+            ProgressFactory(id=programs[1]['id'], in_progress=self._extract_names(programs[1], 0))
         )
         self.assertEqual(meter.completed_programs, [])
 
@@ -438,9 +358,9 @@ class TestProgramProgressMeter(ProgramsApiConfigMixin, TestCase):
         self.assertEqual(meter.engaged_programs(), programs)
         self._assert_progress(
             meter,
-            factories.Progress(id=programs[0]['id'], in_progress=self._extract_names(programs[0], 0)),
-            factories.Progress(id=programs[1]['id'], in_progress=self._extract_names(programs[1], 0)),
-            factories.Progress(id=programs[2]['id'], in_progress=self._extract_names(programs[2], 0))
+            ProgressFactory(id=programs[0]['id'], in_progress=self._extract_names(programs[0], 0)),
+            ProgressFactory(id=programs[1]['id'], in_progress=self._extract_names(programs[1], 0)),
+            ProgressFactory(id=programs[2]['id'], in_progress=self._extract_names(programs[2], 0))
         )
         self.assertEqual(meter.completed_programs, [])
 
@@ -480,7 +400,7 @@ class TestProgramProgressMeter(ProgramsApiConfigMixin, TestCase):
         program, program_id = data[0], data[0]['id']
         self._assert_progress(
             meter,
-            factories.Progress(
+            ProgressFactory(
                 id=program_id,
                 in_progress=self._extract_names(program, 0),
                 not_started=self._extract_names(program, 1)
@@ -493,7 +413,7 @@ class TestProgramProgressMeter(ProgramsApiConfigMixin, TestCase):
         meter = utils.ProgramProgressMeter(self.user)
         self._assert_progress(
             meter,
-            factories.Progress(
+            ProgressFactory(
                 id=program_id,
                 in_progress=self._extract_names(program, 0, 1)
             )
@@ -507,7 +427,7 @@ class TestProgramProgressMeter(ProgramsApiConfigMixin, TestCase):
         meter = utils.ProgramProgressMeter(self.user)
         self._assert_progress(
             meter,
-            factories.Progress(
+            ProgressFactory(
                 id=program_id,
                 completed=self._extract_names(program, 0),
                 in_progress=self._extract_names(program, 1)
@@ -523,7 +443,7 @@ class TestProgramProgressMeter(ProgramsApiConfigMixin, TestCase):
         meter = utils.ProgramProgressMeter(self.user)
         self._assert_progress(
             meter,
-            factories.Progress(
+            ProgressFactory(
                 id=program_id,
                 completed=self._extract_names(program, 0),
                 in_progress=self._extract_names(program, 1)
@@ -539,7 +459,7 @@ class TestProgramProgressMeter(ProgramsApiConfigMixin, TestCase):
         meter = utils.ProgramProgressMeter(self.user)
         self._assert_progress(
             meter,
-            factories.Progress(
+            ProgressFactory(
                 id=program_id,
                 completed=self._extract_names(program, 0, 1)
             )
@@ -584,7 +504,7 @@ class TestProgramProgressMeter(ProgramsApiConfigMixin, TestCase):
         program, program_id = data[0], data[0]['id']
         self._assert_progress(
             meter,
-            factories.Progress(id=program_id, completed=self._extract_names(program, 0))
+            ProgressFactory(id=program_id, completed=self._extract_names(program, 0))
         )
         self.assertEqual(meter.completed_programs, [program_id])
 

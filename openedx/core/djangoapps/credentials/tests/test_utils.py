@@ -18,7 +18,7 @@ from openedx.core.djangoapps.credentials.utils import (
     get_programs_for_credentials
 )
 from openedx.core.djangoapps.credentials.tests import factories
-from openedx.core.djangoapps.programs.tests.mixins import ProgramsApiConfigMixin, ProgramsDataMixin
+from openedx.core.djangoapps.programs.tests.mixins import ProgramsApiConfigMixin
 from openedx.core.djangoapps.programs.models import ProgramsApiConfig
 from openedx.core.djangolib.testing.utils import CacheIsolationTestCase, skip_unless_lms
 from student.tests.factories import UserFactory

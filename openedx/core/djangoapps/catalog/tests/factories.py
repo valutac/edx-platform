@@ -26,17 +26,17 @@ def generate_zulu_datetime():
     return fake.date_time().isoformat() + 'Z'
 
 
-class DictFactory(factory.Factory):
+class DictFactoryBase(factory.Factory):
     class Meta(object):
         model = dict
 
 
-class ImageFactory(DictFactory):
+class ImageFactoryBase(DictFactoryBase):
     height = factory.Faker('random_int')
     width = factory.Faker('random_int')
 
 
-class Image(ImageFactory):
+class ImageFactory(ImageFactoryBase):
     """
     For constructing dicts mirroring the catalog's serialized representation of ImageFields.
 
@@ -46,7 +46,7 @@ class Image(ImageFactory):
     src = factory.Faker('image_url')
 
 
-class StdImage(ImageFactory):
+class StdImageFactory(ImageFactoryBase):
     """
     For constructing dicts mirroring the catalog's serialized representation of StdImageFields.
 
@@ -57,21 +57,21 @@ class StdImage(ImageFactory):
 
 def generate_sized_stdimage():
     return {
-        size: StdImage() for size in ['large', 'medium', 'small', 'x-small']
+        size: StdImageFactory() for size in ['large', 'medium', 'small', 'x-small']
     }
 
 
-class Organization(DictFactory):
+class OrganizationFactory(DictFactoryBase):
     key = factory.Faker('word')
     name = factory.Faker('company')
     uuid = factory.Faker('uuid4')
 
 
-class CourseRun(DictFactory):
+class CourseRunFactory(DictFactoryBase):
     end = factory.LazyFunction(generate_zulu_datetime)
     enrollment_end = factory.LazyFunction(generate_zulu_datetime)
     enrollment_start = factory.LazyFunction(generate_zulu_datetime)
-    image = Image()
+    image = ImageFactory()
     key = factory.LazyFunction(generate_course_run_key)
     marketing_url = factory.Faker('url')
     pacing_type = 'self_paced'
@@ -82,20 +82,20 @@ class CourseRun(DictFactory):
     uuid = factory.Faker('uuid4')
 
 
-class Course(DictFactory):
-    course_runs = [CourseRun() for __ in range(randint(3, 5))]
-    image = Image()
+class CourseFactory(DictFactoryBase):
+    course_runs = [CourseRunFactory() for __ in range(randint(3, 5))]
+    image = ImageFactory()
     key = factory.LazyFunction(generate_course_key)
-    owners = [Organization()]
+    owners = [OrganizationFactory()]
     title = factory.Faker('catch_phrase')
     uuid = factory.Faker('uuid4')
 
 
-class Program(DictFactory):
-    authoring_organizations = [Organization()]
+class ProgramFactory(DictFactoryBase):
+    authoring_organizations = [OrganizationFactory()]
     banner_image = factory.LazyFunction(generate_sized_stdimage)
     card_image_url = factory.Faker('image_url')
-    courses = [Course() for __ in range(randint(3, 5))]
+    courses = [CourseFactory() for __ in range(randint(3, 5))]
     marketing_slug = factory.Faker('slug')
     marketing_url = factory.Faker('url')
     status = 'active'
@@ -105,6 +105,6 @@ class Program(DictFactory):
     uuid = factory.Faker('uuid4')
 
 
-class ProgramType(DictFactory):
+class ProgramTypeFactory(DictFactoryBase):
     name = factory.Faker('word')
     logo_image = factory.LazyFunction(generate_sized_stdimage)
