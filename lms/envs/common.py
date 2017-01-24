@@ -1936,8 +1936,8 @@ INSTALLED_APPS = (
     'pipeline',
     'static_replace',
 
-    # For component views
-    'django_component_views',
+    # For Django web fragment views
+    'web_fragments',
 
     # For content serving
     'openedx.core.djangoapps.contentserver',

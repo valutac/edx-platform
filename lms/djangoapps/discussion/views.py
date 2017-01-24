@@ -2,6 +2,7 @@
 Views handling read (GET) requests for the Discussion tab and inline discussions.
 """
 
+from abc import ABCMeta, abstractmethod
 from functools import wraps
 import logging
 from sets import Set
@@ -19,8 +20,8 @@ from django.utils.translation import get_language_bidi
 from django.views.decorators.http import require_GET
 import newrelic.agent
 
-from django_component_views.component_views import ComponentView
-from django_component_views.fragment import Fragment
+from web_fragments.fragment import Fragment
+from web_fragments.views import FragmentView
 
 from courseware.courses import get_course_with_access
 from openedx.core.djangoapps.course_groups.cohorts import (
@@ -619,10 +620,12 @@ def followed_threads(request, course_key, user_id):
         raise Http404
 
 
-class LmsComponentView(ComponentView):
+class LmsComponentView(FragmentView):
     """
     The base class of all edx-platform component views.
     """
+    __metaclass__ = ABCMeta
+
     @staticmethod
     def get_css_dependencies(group):
         """
@@ -647,6 +650,27 @@ class LmsComponentView(ComponentView):
         else:
             return settings.PIPELINE_JS[group]['source_filenames']
 
+    @abstractmethod
+    def vendor_js_dependencies(self, request, *args, **kwargs):
+        """
+        Returns list of the vendor JS files that this view depends on.
+        """
+        return []
+
+    @abstractmethod
+    def js_dependencies(self, request, *args, **kwargs):
+        """
+        Returns list of the JavaScript files that this view depends on.
+        """
+        return []
+
+    @abstractmethod
+    def css_dependencies(self, request, *args, **kwargs):
+        """
+        Returns list of the CSS files that this view depends on.
+        """
+        return []
+
     def add_resource_urls(self, fragment):
         """
         Adds URLs for JS and CSS resources that this XBlock depends on to `fragment`.
@@ -664,6 +688,7 @@ class LmsComponentView(ComponentView):
 
     def render_standalone_html(self, fragment):
         """
+        Renders a standalone version of this fragment.
         """
         context = {
             'settings': settings,
@@ -677,7 +702,7 @@ class DiscussionBoardComponentView(LmsComponentView):
     """
     Component implementation of the discussion board.
     """
-    def render_component(self, request, course_id=None):
+    def render_fragment(self, request, course_id=None):
         """
         Render the component
         """
@@ -695,7 +720,7 @@ class DiscussionBoardComponentView(LmsComponentView):
 
     def vendor_js_dependencies(self):
         """
-        Returns list of vendor JS files that this XBlock depends on.
+        Returns list of vendor JS files that this view depends on.
 
         The helper function that it uses to obtain the list of vendor JS files
         works in conjunction with the Django pipeline to ensure that in development mode
@@ -710,7 +735,7 @@ class DiscussionBoardComponentView(LmsComponentView):
 
     def js_dependencies(self):
         """
-        Returns list of JS files that this XBlock depends on.
+        Returns list of JS files that this view depends on.
 
         The helper function that it uses to obtain the list of JS files
         works in conjunction with the Django pipeline to ensure that in development mode
@@ -718,10 +743,9 @@ class DiscussionBoardComponentView(LmsComponentView):
         """
         return self.get_js_dependencies('discussion')
 
-
     def css_dependencies(self):
         """
-        Returns list of CSS files that this XBlock depends on.
+        Returns list of CSS files that this view depends on.
 
         The helper function that it uses to obtain the list of CSS files
         works in conjunction with the Django pipeline to ensure that in development mode
