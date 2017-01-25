@@ -18,7 +18,7 @@ function($, Backbone, _, gettext, BaseView, BaseModal, XBlockInfoModel, MoveXBlo
 
         options: $.extend({}, BaseModal.prototype.options, {
             modalName: 'move-xblock',
-            modalSize: 'med',
+            modalSize: 'ml',
             addPrimaryActionButton: true,
             primaryActionButtonType: 'move',
             primaryActionButtonTitle: gettext('Move')
@@ -28,6 +28,10 @@ function($, Backbone, _, gettext, BaseView, BaseModal, XBlockInfoModel, MoveXBlo
             BaseModal.prototype.initialize.call(this);
             this.sourceXBlockInfo = this.options.sourceXBlockInfo;
             this.XBlockUrlRoot = this.options.XBlockUrlRoot;
+            this.XBlockAncestorInfoUrl = StringUtils.interpolate(
+                '{urlRoot}/{usageId}?fields=ancestorInfo',
+                {urlRoot: this.XBlockUrlRoot, usageId: this.sourceXBlockInfo.get('id')}
+            );
             this.outlineURL = this.options.outlineURL;
             this.options.title = this.getTitle();
             this.fetchCourseOutline();
@@ -71,23 +75,12 @@ function($, Backbone, _, gettext, BaseView, BaseModal, XBlockInfoModel, MoveXBlo
                 $('.ui-loading').addClass('is-hidden');
                 $('.breadcrumb-container').removeClass('is-hidden');
                 self.renderViews(outlineJson);
-            }).fail(function(jqXHR, textStatus, errorThrown) {
-                // TODO! What to do here???
             });
         },
 
         renderViews: function(outlineJson) {
-            this.moveXBlockBreadcrumbView = new MoveXBlockBreadcrumbView(
-                {
-                    el: '.breadcrumb-container'
-                }
-            );
-            this.moveXBlockListView = new MoveXBlockListView(
-                {
-                    el: '.xblock-list-container',
-                    model: new XBlockInfoModel(outlineJson, {parse: true})
-                }
-            );
+            this.moveXBlockBreadcrumbView = new MoveXBlockBreadcrumbView({});
+            this.moveXBlockListView = new MoveXBlockListView({model: new XBlockInfoModel(outlineJson, {parse: true})});
         }
     });
 

@@ -12,6 +12,8 @@ function($, Backbone, _, gettext, HtmlUtils, StringUtils, XBlockUtils, MoveXBloc
     'use strict';
 
     var XBlockListView = Backbone.View.extend({
+        el: '.xblock-list-container',
+
         // parent info of currently displayed childs
         parent_info: {},
         // child info of currently displayed child XBlocks

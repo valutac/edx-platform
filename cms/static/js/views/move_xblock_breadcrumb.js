@@ -11,6 +11,8 @@ function($, Backbone, _, gettext, HtmlUtils, StringUtils, MoveXBlockBreadcrumbVi
     'use strict';
 
     var MoveXBlockBreadcrumb = Backbone.View.extend({
+        el: '.breadcrumb-container',
+
         defaultRenderOptions: {
             backButtonEnabled: false,
             breadcrumbs: ['Course Outline'],

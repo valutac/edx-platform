@@ -15,6 +15,6 @@
         <% if (breadcrumbs.length > 1) {%>
             <span class="fa fa-caret-down fa-icon" aria-hidden="true"></span>
         <% } %>
-        <span class="parent-displayname "><%- breadcrumbs[breadcrumbs.length - 1] %></span>
+        <span class="parent-displayname"><%- breadcrumbs[breadcrumbs.length - 1] %></span>
     </div>
 </div>

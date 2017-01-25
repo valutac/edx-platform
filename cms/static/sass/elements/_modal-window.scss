@@ -221,6 +221,17 @@
     }
   }
 
+  // in between medium and large modals
+  // ------------------------
+  .modal-ml {
+    width: 50%;
+    min-width: ($baseline*20);
+
+    .modal-content {
+      padding: 4%;
+    }
+  }
+
   // large modals - component editors and interactives
   // ------------------------
   .modal-lg {
