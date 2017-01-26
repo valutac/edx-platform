@@ -16,33 +16,13 @@ define(['jquery', 'underscore', 'edx-ui-toolkit/js/utils/spec-helpers/ajax-helpe
             getConfirmationFeedbackTitleHtml,
             getConfirmationFeedbackMessageHtml,
             sourceDisplayName = 'HTML 101',
-            outlineUrl = '/course/cid?formats=concise',
             sourceLocator = 'source-xblock-locator',
             targetParentLocator = 'target-parent-xblock-locator',
-            sourceParentLocator = 'source-parent-xblock-locator';
+            sourceParentLocator = 'source-parent-xblock-locator',
+            outlineUrl = '/course/cid?format=concise',
+            ancestorUrL = '/xblock/' + sourceLocator + '?fields=ancestorInfo';
 
         describe('MoveXBlockModal', function() {
-            var modal,
-                showModal,
-                DISPLAY_NAME = 'HTML 101',
-                OUTLINE_URL = '/course/cid?format=concise',
-                ANCESTORS_URL = '/xblock/USAGE_ID?fields=ancestorInfo';
-
-            showModal = function() {
-                modal = new MoveXBlockModal({
-                    sourceXBlockInfo: new XBlockInfo({
-                        id: 'USAGE_ID',
-                        display_name: DISPLAY_NAME,
-                        category: 'html'
-                    }),
-                    XBlockUrlRoot: '/xblock',
-                    outlineURL: OUTLINE_URL,
-                    XBlockAncestorInfoUrl: ANCESTORS_URL
-
-                });
-                modal.show();
-            };
-
             beforeEach(function() {
                 TemplateHelpers.installTemplates([
                     'basic-modal',
@@ -74,7 +54,7 @@ define(['jquery', 'underscore', 'edx-ui-toolkit/js/utils/spec-helpers/ajax-helpe
                 expect(requests.length).toEqual(2);
                 AjaxHelpers.expectRequest(requests, 'GET', outlineUrl);
                 AjaxHelpers.respondWithJson(requests, {});
-                AjaxHelpers.expectRequest(requests, 'GET', ANCESTORS_URL);
+                AjaxHelpers.expectRequest(requests, 'GET', ancestorUrL);
                 AjaxHelpers.respondWithJson(requests, {});
                 expect(renderViewsSpy).toHaveBeenCalled();
             });
@@ -93,7 +73,8 @@ define(['jquery', 'underscore', 'edx-ui-toolkit/js/utils/spec-helpers/ajax-helpe
                     category: 'vertical'
                 }),
                 XBlockUrlRoot: '/xblock',
-                outlineURL: outlineUrl
+                outlineURL: outlineUrl,
+                XBlockAncestorInfoUrl: ancestorUrL
             });
             modal.show();
         };
@@ -109,13 +90,8 @@ define(['jquery', 'underscore', 'edx-ui-toolkit/js/utils/spec-helpers/ajax-helpe
         };
 
         selectTargetParent = function(parentLocator) {
-            modal.moveXBlockListView = {
-                parent_info: {
-                    parent: {
-                        id: parentLocator
-                    }
-                },
-                remove: function() {}   // attach a fake remove method
+            modal.targetParentXBlockInfo = {
+                id: parentLocator
             };
         };
 
@@ -197,7 +173,7 @@ define(['jquery', 'underscore', 'edx-ui-toolkit/js/utils/spec-helpers/ajax-helpe
                     sourceIndex = sourceIndex || 0, // eslint-disable-line no-redeclare
                     moveButton = modal.$el.find('.modal-actions .action-move')[sourceIndex];
 
-                if(isMoveEnabled(sourceIndex)) {
+                if (isMoveEnabled(sourceIndex)) {
                     // select a target item and click
                     selectTargetParent(parentLocator);
                     moveButton.click();
