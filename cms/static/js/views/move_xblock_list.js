@@ -59,7 +59,7 @@ function($, Backbone, _, gettext, HtmlUtils, StringUtils, XBlockUtils, MoveXBloc
                         categoryText: this.getCategoryText(),
                         XBlocksCategory: this.childs_info.category,
                         forwardButtonSRText: this.getForwardButtonSRText(),
-                        currentLocationIndex: this.getCurrentLocationIndex(),
+                        currentLocationIndex: this.getCurrentLocationIndex()
                     }
                 )
             );

@@ -357,17 +357,29 @@
       @include float(left);
       padding-top: 0;
       border-top: none;
+
+      .back-fa-icon {
+        @include rtl {
+          @include transform(rotate(180deg));
+        }
+      }
     }
 
     .breadcrumbs {
       @include float(left);
       @include margin-left($baseline/4);
       @include padding-left($baseline/2);
-      border-left: 1px solid #D9D9D9;
+      @include border-left(1px solid #D9D9D9);
 
       .bc-container {
-        .fa-icon {
+        .breadcrumb-fa-icon {
           width: ($baseline);
+        }
+
+        .breadcrumb-fa-icon:not(.last) {
+          @include rtl {
+            @include transform(rotate(180deg));
+          }
         }
         // setting parent font-size to 0 and then setting child font-size is needed to remove the
         // visible space between inline elements(span.fa-angle-right and button.parent-nav-button)
@@ -380,7 +392,7 @@
 
       @for $i from 2 to 5 {
         .bc-#{$i} {
-          padding-left: ($baseline) * ($i - 1);
+          @include padding-left($baseline * ($i - 1));
         }
       }
 
@@ -423,6 +435,10 @@
 
         .forward-sr-icon {
           @include float(right);
+
+          @include rtl {
+            @include transform(rotate(180deg));
+          }
         }
 
         &:hover {
