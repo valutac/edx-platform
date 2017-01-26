@@ -40,9 +40,10 @@ function($, Backbone, _, gettext, HtmlUtils, StringUtils, XBlockUtils, MoveXBloc
             'click .button-forward': 'renderChilds'
         },
 
-        initialize: function() {
+        initialize: function(options) {
             this.visitedAncestors = [];
             this.template = HtmlUtils.template(MoveXBlockListViewTemplate);
+            this.ancestorInfo = options.ancestorInfo;
             this.listenTo(Backbone, 'move:backButtonPressed', this.handleBackButtonPress);
             this.listenTo(Backbone, 'move:breadcrumbButtonPressed', this.handleBreadcrumbButtonPress);
             this.renderXBlockInfo();
@@ -56,6 +57,7 @@ function($, Backbone, _, gettext, HtmlUtils, StringUtils, XBlockUtils, MoveXBloc
                         xblocks: this.childs_info.childs,
                         noChildText: this.getNoChildText(),
                         categoryText: this.getCategoryText(),
+                        currentLocationIndex: this.getCurrentLocationIndex(),
                         showForwardButton: this.showForwardButton(),
                         forwardButtonSRText: this.getForwardButtonSRText()
                     }
@@ -117,6 +119,30 @@ function($, Backbone, _, gettext, HtmlUtils, StringUtils, XBlockUtils, MoveXBloc
                 this.visitedAncestors[this.visitedAncestors.length - 2]
             );
             this.childs_info.category = this.categoryRelationMap[this.parent_info.category];
+        },
+
+        getCurrentLocationIndex: function() {
+            var category, ancestorXBlock, currentLocationIndex;
+
+            if (this.childs_info.category === 'component' || this.childs_info.childs.length === 0) {
+                return currentLocationIndex;
+            }
+
+            category = this.childs_info.childs[0].get('category');
+            ancestorXBlock = _.find(
+                this.ancestorInfo.ancestors, function(ancestor) { return ancestor.category === category; }
+            );
+
+            if (ancestorXBlock) {
+                _.each(this.childs_info.childs, function(xblock, index) {
+                    if (ancestorXBlock.display_name === xblock.get('display_name') &&
+                        ancestorXBlock.id === xblock.get('id')) {
+                        currentLocationIndex = index;
+                    }
+                });
+            }
+
+            return currentLocationIndex;
         },
 
         getCategoryText: function() {

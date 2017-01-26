@@ -6,17 +6,20 @@ define(['jquery', 'underscore', 'edx-ui-toolkit/js/utils/spec-helpers/ajax-helpe
             var modal,
                 showModal,
                 DISPLAY_NAME = 'HTML 101',
-                OUTLINE_URL = '/course/cid?formats=concise';
+                OUTLINE_URL = '/course/cid?formats=concise',
+                ANCESTORS_URL = '/xblock/USAGE_ID?fields=ancestorInfo';
 
             showModal = function() {
                 modal = new MoveXBlockModal({
                     sourceXBlockInfo: new XBlockInfo({
-                        id: 'testCourse/branch/draft/block/verticalFFF',
+                        id: 'USAGE_ID',
                         display_name: DISPLAY_NAME,
                         category: 'html'
                     }),
                     XBlockUrlRoot: '/xblock',
-                    outlineURL: OUTLINE_URL
+                    outlineURL: OUTLINE_URL,
+                    XBlockAncestorInfoUrl: ANCESTORS_URL
+
                 });
                 modal.show();
             };
@@ -44,7 +47,10 @@ define(['jquery', 'underscore', 'edx-ui-toolkit/js/utils/spec-helpers/ajax-helpe
                     renderViewsSpy;
                 showModal();
                 renderViewsSpy = spyOn(modal, 'renderViews');
+                expect(requests.length).toEqual(2);
                 AjaxHelpers.expectRequest(requests, 'GET', OUTLINE_URL);
+                AjaxHelpers.respondWithJson(requests, {});
+                AjaxHelpers.expectRequest(requests, 'GET', ANCESTORS_URL);
                 AjaxHelpers.respondWithJson(requests, {});
                 expect(renderViewsSpy).toHaveBeenCalled();
             });

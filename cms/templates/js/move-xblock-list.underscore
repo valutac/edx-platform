@@ -14,6 +14,12 @@
                 <span class="button-displayname truncate">
                     <%- xblock.get('display_name') %>
                 </span>
+                <% if(currentLocationIndex === i) { %>
+                    <span class="current-location">
+                        (<%= gettext('Current location') %>)
+                    </span>
+                <% } %>
+
                 <% if(showForwardButton) { %>
                     <span class="icon fa fa-arrow-right forward-sr-icon" aria-hidden="true"></span>
                     <span class="sr forward-sr-text"><%- forwardButtonSRText %></span>

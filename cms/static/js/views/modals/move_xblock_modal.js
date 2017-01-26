@@ -66,21 +66,34 @@ function($, Backbone, _, gettext, BaseView, BaseModal, XBlockInfoModel, MoveXBlo
 
         fetchCourseOutline: function() {
             var self = this;
-            $.ajax({
-                url: this.outlineURL,
-                contentType: 'application/json',
-                dataType: 'json',
-                type: 'GET'
-            }).done(function(outlineJson) {
+            $.when(
+                $.ajax({
+                    url: this.outlineURL,
+                    contentType: 'application/json',
+                    dataType: 'json',
+                    type: 'GET'
+                }),
+                $.ajax({
+                    url: this.XBlockAncestorInfoUrl,
+                    contentType: 'application/json',
+                    dataType: 'json',
+                    type: 'GET'
+                })
+            ).then(function(outlineResponse, ancestorResponse) {
                 $('.ui-loading').addClass('is-hidden');
                 $('.breadcrumb-container').removeClass('is-hidden');
-                self.renderViews(outlineJson);
+                self.renderViews(outlineResponse[0], ancestorResponse[0]);
             });
         },
 
-        renderViews: function(outlineJson) {
+        renderViews: function(outlineJson, ancestorInfo) {
             this.moveXBlockBreadcrumbView = new MoveXBlockBreadcrumbView({});
-            this.moveXBlockListView = new MoveXBlockListView({model: new XBlockInfoModel(outlineJson, {parse: true})});
+            this.moveXBlockListView = new MoveXBlockListView(
+                {
+                    model: new XBlockInfoModel(outlineJson, {parse: true}),
+                    ancestorInfo: ancestorInfo
+                }
+            );
         }
     });
 

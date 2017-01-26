@@ -429,12 +429,15 @@
     }
   }
 
-  .modal-content {
-    .truncate {
-        max-width: 90%;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-      }
+  .truncate {
+    max-width: 90%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .current-location {
+    @include float(left);
+    @include margin-left($baseline);
   }
 }

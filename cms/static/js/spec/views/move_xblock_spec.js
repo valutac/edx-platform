@@ -83,10 +83,13 @@ define(['jquery', 'underscore', 'edx-ui-toolkit/js/utils/spec-helpers/ajax-helpe
                 return createXBlockInfo('section', options, courseOutline);
             };
 
-            renderViews = function(courseOutlineJson) {
+            renderViews = function(courseOutlineJson, ancestorInfo) {
                 moveXBlockBreadcrumbView = new MoveXBlockBreadcrumbView({});
                 moveXBlockListView = new MoveXBlockListView(
-                    {model: new XBlockInfoModel(courseOutlineJson, {parse: true})}
+                    {
+                        model: new XBlockInfoModel(courseOutlineJson, {parse: true}),
+                        ancestorInfo: ancestorInfo || {ancestors: []}
+                    }
                 );
             };
 
@@ -94,6 +97,7 @@ define(['jquery', 'underscore', 'edx-ui-toolkit/js/utils/spec-helpers/ajax-helpe
                 var viewEl = moveXBlockListView.$el;
                 return {
                     categoryText: viewEl.find('.category-text').text().trim(),
+                    currentLocationText: viewEl.find('.current-location').text().trim(),
                     xblockCount: viewEl.find('.xblock-item').length,
                     xblockDisplayNames: viewEl.find('.xblock-item .button-displayname').map(
                         function() { return $(this).text().trim(); }
@@ -105,7 +109,7 @@ define(['jquery', 'underscore', 'edx-ui-toolkit/js/utils/spec-helpers/ajax-helpe
                 };
             };
 
-            verifyListViewInfo = function(category, expectedXBlocksCount) {
+            verifyListViewInfo = function(category, expectedXBlocksCount, hasCurrentLocation) {
                 var displayedInfo = getDisplayedInfo();
                 expect(displayedInfo.categoryText).toEqual(moveXBlockListView.categoriesText[category] + ':');
                 expect(displayedInfo.xblockCount).toEqual(expectedXBlocksCount);
@@ -115,6 +119,9 @@ define(['jquery', 'underscore', 'edx-ui-toolkit/js/utils/spec-helpers/ajax-helpe
                     })
                 );
                 if (category !== 'component') {
+                    if (hasCurrentLocation) {
+                        expect(displayedInfo.currentLocationText).toEqual('(Current location)');
+                    }
                     expect(displayedInfo.forwardButtonSRTexts).toEqual(
                         _.map(_.range(expectedXBlocksCount), function() {
                             return 'Press button to see ' + category + ' childs';
@@ -153,11 +160,11 @@ define(['jquery', 'underscore', 'edx-ui-toolkit/js/utils/spec-helpers/ajax-helpe
                 moveXBlockBreadcrumbView.$el.find('.button-backward').click();
             };
 
-            verifyXBlockInfo = function(options, category, buttonIndex, direction) {
+            verifyXBlockInfo = function(options, category, buttonIndex, direction, hasCurrentLocation) {
                 var expectedXBlocksCount = options[category],
                     newCategory;
 
-                verifyListViewInfo(category, expectedXBlocksCount);
+                verifyListViewInfo(category, expectedXBlocksCount, hasCurrentLocation);
                 verifyBreadcrumbViewInfo(category, buttonIndex);
 
                 if (direction === 'forward') {
@@ -174,13 +181,13 @@ define(['jquery', 'underscore', 'edx-ui-toolkit/js/utils/spec-helpers/ajax-helpe
                     newCategory = _.invert(parentToChildMap)[category];
                 }
 
-                verifyXBlockInfo(options, newCategory, buttonIndex, direction);
+                verifyXBlockInfo(options, newCategory, buttonIndex, direction, hasCurrentLocation);
             };
 
             verifyInfo = function(options) {
                 _.each(_.range(options.section), function(item, index) {
-                    verifyXBlockInfo(options, 'section', index, 'forward');
-                    verifyXBlockInfo(options, 'component', index, 'backward');
+                    verifyXBlockInfo(options, 'section', index, 'forward', false);
+                    verifyXBlockInfo(options, 'component', index, 'backward', false);
                 });
             };
 
@@ -211,6 +218,41 @@ define(['jquery', 'underscore', 'edx-ui-toolkit/js/utils/spec-helpers/ajax-helpe
                         moveXBlockBreadcrumbView.$el.find('.bc-container button').last().click();
                     }
                 });
+            });
+
+            it('shows the correct current location', function() {
+                var outlineOptions = {section: 2, subsection: 2, unit: 2, component: 2},
+                    outline = createCourseOutline(outlineOptions),
+                    ancestorInfo = {
+                        ancestors: [
+                            {
+                                category: 'vertical',
+                                display_name: 'unit_display_name_0',
+                                id: 'unit_ID'
+                            },
+                            {
+                                category: 'sequential',
+                                display_name: 'subsection_display_name_0',
+                                id: 'subsection_ID'
+                            },
+                            {
+                                category: 'chapter',
+                                display_name: 'section_display_name_0',
+                                id: 'section_ID'
+                            },
+                            {
+                                category: 'course',
+                                display_name: 'Demo Course',
+                                id: 'COURSE_ID_101'
+                            }
+                        ]
+                    };
+
+                renderViews(outline, ancestorInfo);
+                verifyXBlockInfo(outlineOptions, 'section', 0, 'forward', true);
+                // click the outline breadcrumb to render sections
+                moveXBlockBreadcrumbView.$el.find('.bc-container button').first().click();
+                verifyXBlockInfo(outlineOptions, 'section', 1, 'forward', false);
             });
 
             it('shows correct message when parent has no childs', function() {
