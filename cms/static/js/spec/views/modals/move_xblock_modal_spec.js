@@ -6,7 +6,7 @@ define(['jquery', 'underscore', 'edx-ui-toolkit/js/utils/spec-helpers/ajax-helpe
             var modal,
                 showModal,
                 DISPLAY_NAME = 'HTML 101',
-                OUTLINE_URL = '/course/cid?formats=concise',
+                OUTLINE_URL = '/course/cid?format=concise',
                 ANCESTORS_URL = '/xblock/USAGE_ID?fields=ancestorInfo';
 
             showModal = function() {

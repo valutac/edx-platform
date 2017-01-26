@@ -164,7 +164,7 @@ def container_handler(request, usage_key_string):
                 'subsection': subsection,
                 'section': section,
                 'new_unit_category': 'vertical',
-                'outline_url': '{}?formats=concise'.format(reverse_course_url('course_handler', course.id)),
+                'outline_url': '{}?format=concise'.format(reverse_course_url('course_handler', course.id)),
                 'ancestor_xblocks': ancestor_xblocks,
                 'component_templates': component_templates,
                 'xblock_info': xblock_info,
