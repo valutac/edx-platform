@@ -57,9 +57,9 @@ function($, Backbone, _, gettext, HtmlUtils, StringUtils, XBlockUtils, MoveXBloc
                         xblocks: this.childs_info.childs,
                         noChildText: this.getNoChildText(),
                         categoryText: this.getCategoryText(),
+                        XBlocksCategory: this.childs_info.category,
+                        forwardButtonSRText: this.getForwardButtonSRText(),
                         currentLocationIndex: this.getCurrentLocationIndex(),
-                        showForwardButton: this.showForwardButton(),
-                        forwardButtonSRText: this.getForwardButtonSRText()
                     }
                 )
             );
@@ -174,10 +174,6 @@ function($, Backbone, _, gettext, HtmlUtils, StringUtils, XBlockUtils, MoveXBloc
                            gettext('Course Outline') : ancestor.get('display_name');
                 })
             };
-        },
-
-        showForwardButton: function() {
-            return this.childs_info.category !== 'component';
         }
     });
 

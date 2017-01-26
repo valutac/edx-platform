@@ -403,12 +403,21 @@
     overflow-y: auto;
 
     .xblock-item {
-      .button-forward {
+      & > * {
         width: 100%;
+      }
+
+      .component {
+        display: block;
+      }
+
+      .button-forward, .component {
         border: none;
         padding: ($baseline/2);
+      }
 
-        .button-displayname {
+      .button-forward {
+        .xblock-displayname {
           @include float(left);
         }
 

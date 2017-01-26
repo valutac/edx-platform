@@ -66,6 +66,7 @@ define(['jquery', 'underscore', 'gettext', 'js/views/baseview'],
                     type: this.options.modalType,
                     size: this.options.modalSize,
                     title: this.getTitle(),
+                    modalSRTitle: this.options.modalSRTitle,
                     viewSpecificClasses: this.options.viewSpecificClasses
                 }));
                 this.addActionButtons();

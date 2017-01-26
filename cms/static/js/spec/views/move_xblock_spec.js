@@ -99,7 +99,7 @@ define(['jquery', 'underscore', 'edx-ui-toolkit/js/utils/spec-helpers/ajax-helpe
                     categoryText: viewEl.find('.category-text').text().trim(),
                     currentLocationText: viewEl.find('.current-location').text().trim(),
                     xblockCount: viewEl.find('.xblock-item').length,
-                    xblockDisplayNames: viewEl.find('.xblock-item .button-displayname').map(
+                    xblockDisplayNames: viewEl.find('.xblock-item .xblock-displayname').map(
                         function() { return $(this).text().trim(); }
                     ).get(),
                     forwardButtonSRTexts: viewEl.find('.xblock-item .forward-sr-text').map(

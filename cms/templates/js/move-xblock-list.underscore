@@ -1,6 +1,6 @@
 <div class="xblock-items-category">
     <% // Translators: The complete message will be something like `Showing Subsections/Units/Components` etc. %>
-    <span class="sr"><%= gettext('Showing ') %></span>
+    <span class="sr"><%- gettext('Showing ') %></span>
     <span class="category-text">
         <%- categoryText %>:
     </span>
@@ -9,22 +9,25 @@
     <% for (var i = 0; i < xblocks.length; i++) {
         var xblock = xblocks[i];
     %>
-        <li class="xblock-item" data-item-index="<%= i %>">
-            <button class="button-forward <%= !showForwardButton ? "is-disabled" : "" %>" >
-                <span class="button-displayname truncate">
+        <li class="xblock-item" data-item-index="<%- i %>">
+            <% if (XBlocksCategory === 'component') { %>
+                <span class="xblock-displayname component truncate">
                     <%- xblock.get('display_name') %>
                 </span>
-                <% if(currentLocationIndex === i) { %>
-                    <span class="current-location">
-                        (<%= gettext('Current location') %>)
+            <% } else { %>
+                <button class="button-forward" >
+                    <span class="xblock-displayname truncate">
+                        <%- xblock.get('display_name') %>
                     </span>
-                <% } %>
-
-                <% if(showForwardButton) { %>
+                    <% if(currentLocationIndex === i) { %>
+                        <span class="current-location">
+                            (<%- gettext('Current location') %>)
+                        </span>
+                    <% } %>
                     <span class="icon fa fa-arrow-right forward-sr-icon" aria-hidden="true"></span>
                     <span class="sr forward-sr-text"><%- forwardButtonSRText %></span>
-                <% } %>
-            </button>
+                </button>
+            <% } %>
         </li>
     <% } %>
     <% if(xblocks.length === 0) { %>

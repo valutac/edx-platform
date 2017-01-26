@@ -38,7 +38,12 @@ define(['jquery', 'underscore', 'edx-ui-toolkit/js/utils/spec-helpers/ajax-helpe
 
             it('rendered as expected', function() {
                 showModal();
-                expect(modal.$el.find('.modal-header .title').text()).toEqual('Move: ' + DISPLAY_NAME);
+                expect(
+                    modal.$el.find('.modal-header .title').contents().get(0).nodeValue.trim()
+                ).toEqual('Move: ' + DISPLAY_NAME);
+                expect(
+                    modal.$el.find('.modal-sr-title').text().trim()
+                ).toEqual('Choose a location to move your component to');
                 expect(modal.$el.find('.modal-actions .action-primary.action-move').text()).toEqual('Move');
             });
 

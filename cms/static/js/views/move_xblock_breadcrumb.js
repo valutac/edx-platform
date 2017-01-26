@@ -34,6 +34,7 @@ function($, Backbone, _, gettext, HtmlUtils, StringUtils, MoveXBlockBreadcrumbVi
                 this.$el,
                 this.template(_.extend({}, this.defaultRenderOptions, options))
             );
+            Backbone.trigger('move:breadcrumbRendered');
             return this;
         },
 

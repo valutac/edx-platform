@@ -3,7 +3,7 @@
         <span class="spin">
             <span class="icon fa fa-refresh" aria-hidden="true"></span>
         </span>
-        <span class="copy"><%= gettext('Loading') %></span>
+        <span class="copy"><%- gettext('Loading') %></span>
     </p>
 </div>
 <div class='breadcrumb-container is-hidden'></div>

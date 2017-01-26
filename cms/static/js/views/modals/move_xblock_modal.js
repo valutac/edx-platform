@@ -14,18 +14,18 @@ function($, Backbone, _, gettext, BaseView, BaseModal, XBlockInfoModel, MoveXBlo
     'use strict';
 
     var MoveXblockModal = BaseModal.extend({
-        modalSRTitle: gettext('Choose a location to move your component to'),
-
         options: $.extend({}, BaseModal.prototype.options, {
             modalName: 'move-xblock',
             modalSize: 'ml',
             addPrimaryActionButton: true,
             primaryActionButtonType: 'move',
-            primaryActionButtonTitle: gettext('Move')
+            primaryActionButtonTitle: gettext('Move'),
+            modalSRTitle: gettext('Choose a location to move your component to')
         }),
 
         initialize: function() {
             BaseModal.prototype.initialize.call(this);
+            this.listenTo(Backbone, 'move:breadcrumbRendered', this.focusModal);
             this.sourceXBlockInfo = this.options.sourceXBlockInfo;
             this.XBlockUrlRoot = this.options.XBlockUrlRoot;
             this.XBlockAncestorInfoUrl = StringUtils.interpolate(
@@ -50,7 +50,6 @@ function($, Backbone, _, gettext, BaseView, BaseModal, XBlockInfoModel, MoveXBlo
 
         show: function() {
             BaseModal.prototype.show.apply(this, [false]);
-            Feedback.prototype.inFocus.apply(this, [this.options.modalWindowClass]);
         },
 
         hide: function() {
@@ -62,6 +61,10 @@ function($, Backbone, _, gettext, BaseView, BaseModal, XBlockInfoModel, MoveXBlo
             }
             BaseModal.prototype.hide.apply(this);
             Feedback.prototype.outFocus.apply(this);
+        },
+
+        focusModal: function() {
+            Feedback.prototype.inFocus.apply(this, [this.options.modalWindowClass]);
         },
 
         fetchCourseOutline: function() {
