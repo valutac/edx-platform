@@ -68,6 +68,7 @@ function($, Backbone, _, gettext, BaseView, BaseModal, XBlockInfoModel, MoveXBlo
             BaseModal.prototype.show.apply(this, [false]);
             Feedback.prototype.inFocus.apply(this, [this.options.modalWindowClass]);
             this.enableMoveOperation(false);
+            MoveXBlockUtils.hideMovedNotification(Feedback);
         },
 
         hide: function() {
@@ -152,9 +153,6 @@ function($, Backbone, _, gettext, BaseView, BaseModal, XBlockInfoModel, MoveXBlo
                         self.hide();
                         // hide xblock element
                         $("li.studio-xblock-wrapper[data-locator='" + self.sourceXBlockInfo.id + "']").hide();
-                        if (self.movedAlertView) {
-                            self.movedAlertView.hide();
-                        }
                         self.movedAlertView = MoveXBlockUtils.showMovedNotification(
                             StringUtils.interpolate(
                                 gettext('Success! "{displayName}" has been moved.'),

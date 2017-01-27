@@ -5,7 +5,7 @@ define(['jquery', 'underscore', 'common/js/components/views/feedback_alert', 'js
         'js/views/utils/move_xblock_utils', 'edx-ui-toolkit/js/utils/string-utils'],
     function($, _, AlertView, XBlockViewUtils, MoveXBlockUtils, StringUtils) {
         'use strict';
-        var MovedAlertView, showMovedNotification;
+        var MovedAlertView, showMovedNotification, hideMovedNotification;
 
         MovedAlertView = AlertView.Confirmation.extend({
             events: _.extend({}, AlertView.Confirmation.prototype.events, {
@@ -50,8 +50,7 @@ define(['jquery', 'underscore', 'common/js/components/views/feedback_alert', 'js
             var movedAlertView = new MovedAlertView({
                 title: title,
                 titleHtml: titleHtml,
-                messageHtml: messageHtml,
-                maxShown: 10000
+                messageHtml: messageHtml
             });
             movedAlertView.show();
             // scroll to top
@@ -63,7 +62,15 @@ define(['jquery', 'underscore', 'common/js/components/views/feedback_alert', 'js
             return movedAlertView;
         };
 
+        hideMovedNotification = function(SystemFeedback) {
+            var movedAlertView = SystemFeedback['active_alert'];
+            if (movedAlertView) {
+                MovedAlertView.prototype.hide.apply(movedAlertView);
+            }
+        };
+
         return {
-            showMovedNotification: showMovedNotification
+            showMovedNotification: showMovedNotification,
+            hideMovedNotification: hideMovedNotification
         };
     });
