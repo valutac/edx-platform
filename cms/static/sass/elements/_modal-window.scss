@@ -297,8 +297,17 @@
   // ------------------------
 
   // Move XBlock Modal
-  .move-xblock-modal .ui-loading {
-    box-shadow: none;
+  .modal-window.move-modal {
+    top: 10% !important;
+  }
+
+  .move-xblock-modal {
+    .modal-content {
+      padding: ($baseline/2) ($baseline/2) ($baseline*1.25) ($baseline/2);
+    }
+    .ui-loading {
+      box-shadow: none;
+    }
   }
 
   // upload modal

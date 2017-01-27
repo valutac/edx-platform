@@ -345,7 +345,7 @@
     border: 1px solid #D9D9D9;
     border-bottom: 1px solid #979797;
     padding: ($baseline/2) 0 ($baseline/2) 0;
-    background: #F5F5F5;
+    background: #F2F8FB;
     overflow: hidden;
 
     button:not(.button-backward) {
@@ -357,6 +357,10 @@
       @include float(left);
       padding-top: 0;
       border-top: none;
+
+      &:disabled {
+        color: #d9d9d9;
+      }
 
       .back-fa-icon {
         @include rtl {
@@ -384,10 +388,16 @@
         // setting parent font-size to 0 and then setting child font-size is needed to remove the
         // visible space between inline elements(span.fa-angle-right and button.parent-nav-button)
         // https://davidwalsh.name/remove-whitespace-inline-block
+        font-size: 0;
         & > * {
           @include font-size(14);
         }
-        font-size: 0;
+
+        &.bc-0.last {
+          .parent-displayname {
+            @include font-size(18);
+          }
+        }
       }
 
       @for $i from 2 to 5 {
@@ -407,7 +417,8 @@
 
   .category-text {
     @include font-size(14);
-    color: #414141
+    color: #414141;
+    @include margin-left($baseline/2);
   }
 
   .xblock-items-container {
@@ -417,6 +428,7 @@
     .xblock-item {
       & > * {
         width: 100%;
+        color: #065683;
       }
 
       .component {
@@ -441,7 +453,7 @@
           }
         }
 
-        &:hover {
+        &:hover, &:focus {
           background: rgb(242, 248, 251);
         }
       }

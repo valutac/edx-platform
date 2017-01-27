@@ -19,6 +19,7 @@ function($, Backbone, _, gettext, BaseView, BaseModal, XBlockInfoModel, MoveXBlo
             modalSize: 'ml',
             addPrimaryActionButton: true,
             primaryActionButtonType: 'move',
+            viewSpecificClasses: 'move-modal',
             primaryActionButtonTitle: gettext('Move'),
             modalSRTitle: gettext('Choose a location to move your component to')
         }),
