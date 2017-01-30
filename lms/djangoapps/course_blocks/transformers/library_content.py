@@ -105,7 +105,7 @@ class ContentLibraryTransformer(FilteringTransformerMixin, BlockStructureTransfo
                     )
 
                 # publish events for analytics
-                self._publish_events(block_structure, block_key, previous_count, max_count, block_keys)
+                self._publish_events(block_structure, block_key, previous_count, max_count, block_keys, usage_info.user)
                 all_selected_children.update(usage_info.course_key.make_usage_key(s[0], s[1]) for s in selected)
 
         def check_child_removal(block_key):
@@ -146,7 +146,7 @@ class ContentLibraryTransformer(FilteringTransformerMixin, BlockStructureTransfo
             return None
 
     @classmethod
-    def _publish_events(cls, block_structure, location, previous_count, max_count, block_keys):
+    def _publish_events(cls, block_structure, location, previous_count, max_count, block_keys, user_id):
         """
         Helper method to publish events for analytics purposes
         """
@@ -163,7 +163,7 @@ class ContentLibraryTransformer(FilteringTransformerMixin, BlockStructureTransfo
                 json_result.append(info)
             return json_result
 
-        def publish_event(event_name, result, **kwargs):
+        def publish_event(event_name, result, user_id, **kwargs):
             """
             Helper function to publish an event for analytics purposes
             """
@@ -171,7 +171,9 @@ class ContentLibraryTransformer(FilteringTransformerMixin, BlockStructureTransfo
                 "location": unicode(location),
                 "previous_count": previous_count,
                 "result": result,
-                "max_count": max_count
+                "max_count": max_count,
+                "user_id": user_id,
+                "course_id": unicode(location.course_key),
             }
             event_data.update(kwargs)
             tracker.emit("edx.librarycontentblock.content.{}".format(event_name), event_data)
@@ -180,4 +182,5 @@ class ContentLibraryTransformer(FilteringTransformerMixin, BlockStructureTransfo
             block_keys,
             format_block_keys,
             publish_event,
+            user_id,
         )

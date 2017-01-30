@@ -182,7 +182,7 @@ class LibraryContentModule(LibraryContentFields, XModule, StudioEditableModule):
             'added': added_block_keys,
         }
 
-    def _publish_event(self, event_name, result, **kwargs):
+    def _publish_event(self, event_name, result, user_id, **kwargs):
         """
         Helper method to publish an event for analytics purposes
         """
@@ -191,13 +191,15 @@ class LibraryContentModule(LibraryContentFields, XModule, StudioEditableModule):
             "result": result,
             "previous_count": getattr(self, "_last_event_result_count", len(self.selected)),
             "max_count": self.max_count,
+            "user_id": user_id,
+            "course_id": unicode(self.course_id),
         }
         event_data.update(kwargs)
         self.runtime.publish(self, "edx.librarycontentblock.content.{}".format(event_name), event_data)
         self._last_event_result_count = len(result)  # pylint: disable=attribute-defined-outside-init
 
     @classmethod
-    def publish_selected_children_events(cls, block_keys, format_block_keys, publish_event):
+    def publish_selected_children_events(cls, block_keys, format_block_keys, publish_event, user_id):
         """
         Helper method for publishing events when children blocks are
         selected/updated for a user.  This helper is also used by
@@ -226,6 +228,10 @@ class LibraryContentModule(LibraryContentFields, XModule, StudioEditableModule):
 
                 Where T is a collection of block_keys as returned by
                 `format_block_keys`.
+
+            user_id -
+                An identifier for the user for whom blocks are selected/updated. Used
+                for analytics events.
         """
         if block_keys['invalid']:
             # reason "invalid" means deleted from library or a different library is now being used.
@@ -248,7 +254,8 @@ class LibraryContentModule(LibraryContentFields, XModule, StudioEditableModule):
             publish_event(
                 "assigned",
                 result=format_block_keys(block_keys['selected']),
-                added=format_block_keys(block_keys['added'])
+                added=format_block_keys(block_keys['added']),
+                user_id=user_id
             )
 
     def selected_children(self):
@@ -275,6 +282,7 @@ class LibraryContentModule(LibraryContentFields, XModule, StudioEditableModule):
             block_keys,
             format_block_keys,
             self._publish_event,
+            self.runtime.user_id
         )
 
         # Save our selections to the user state, to ensure consistency:
