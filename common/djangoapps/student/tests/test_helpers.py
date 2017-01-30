@@ -2,6 +2,7 @@
 
 import logging
 
+from django.conf import settings
 from django.core.urlresolvers import reverse
 from django.test import TestCase
 from django.test.client import RequestFactory
@@ -34,3 +35,13 @@ class TestLoginHelper(TestCase):
         req = self.request.get(reverse("login") + "?next={url}".format(url="/dashboard"))
         next_page = get_next_url_for_login_page(req)
         self.assertEqual(next_page, u'/dashboard')
+
+    def test_static_path_next(self):
+        """ Test static assets are not accessible with next parameter. """
+        static_assets = settings.STATIC_URL + "dummy.png"
+        with LogCapture(LOGGER_NAME, level=logging.ERROR) as logger:
+            req = self.request.get(reverse("login") + "?next={url}".format(url=static_assets))
+            get_next_url_for_login_page(req)
+            logger.check(
+                (LOGGER_NAME, "ERROR", u"Unsafe redirect parameter detected: u'{url}'".format(url=static_assets))
+            )
