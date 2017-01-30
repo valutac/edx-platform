@@ -343,7 +343,6 @@
   .breadcrumb-container {
     margin-bottom: ($baseline/4);
     border: 1px solid #D9D9D9;
-    border-bottom: 1px solid #979797;
     padding: ($baseline/2) 0 ($baseline/2) 0;
     background: #F2F8FB;
     overflow: hidden;
@@ -378,6 +377,12 @@
       .bc-container {
         .breadcrumb-fa-icon {
           width: ($baseline);
+          @include rtl {
+            text-align: left;
+            &.last {
+                text-align: right;
+            }
+          }
         }
 
         .breadcrumb-fa-icon:not(.last) {
@@ -393,7 +398,7 @@
           @include font-size(14);
         }
 
-        &.bc-0.last {
+        &.last {
           .parent-displayname {
             @include font-size(18);
           }
@@ -433,6 +438,7 @@
 
       .component {
         display: block;
+        color: #414141;
       }
 
       .button-forward, .component {
