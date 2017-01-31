@@ -16,24 +16,24 @@ define(['jquery', 'underscore', 'common/js/components/views/feedback_alert', 'js
 
             initialize: function() {
                 AlertView.prototype.initialize.apply(this, arguments);
-                this.movedAlertView = null;
+                this.undoMovedAlertView = null;
             },
 
             undoMoveXBlock: function(event) {
                 var self = this,
-                    $moveButton = $(event.target),
-                    sourceLocator = $moveButton.data('source-locator'),
-                    sourceDisplayName = $moveButton.data('source-display-name'),
-                    sourceParentLocator = $moveButton.data('source-parent-locator'),
-                    targetIndex = $moveButton.data('target-index');
+                    $moveLink = $(event.target),
+                    sourceLocator = $moveLink.data('source-locator'),
+                    sourceDisplayName = $moveLink.data('source-display-name'),
+                    sourceParentLocator = $moveLink.data('source-parent-locator'),
+                    targetIndex = $moveLink.data('target-index');
                 XBlockViewUtils.moveXBlock(sourceLocator, sourceParentLocator, targetIndex)
                 .done(function(response) {
                     // show XBlock element
                     $('.studio-xblock-wrapper[data-locator="' + response.move_source_locator + '"]').show();
-                    if (self.movedAlertView) {
-                        self.movedAlertView.hide();
+                    if (self.undoMovedAlertView) {
+                        self.undoMovedAlertView.hide();
                     }
-                    self.movedAlertView = showMovedNotification(
+                    self.undoMovedAlertView = showMovedNotification(
                         StringUtils.interpolate(
                             gettext('Move cancelled. "{sourceDisplayName}" has been moved back to its original ' +
                                 'location.'),
@@ -63,7 +63,7 @@ define(['jquery', 'underscore', 'common/js/components/views/feedback_alert', 'js
         };
 
         hideMovedNotification = function(SystemFeedback) {
-            var movedAlertView = SystemFeedback['active_alert'];
+            var movedAlertView = SystemFeedback.active_alert;
             if (movedAlertView) {
                 MovedAlertView.prototype.hide.apply(movedAlertView);
             }

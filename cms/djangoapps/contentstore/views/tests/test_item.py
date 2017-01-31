@@ -783,7 +783,6 @@ class TestMoveItem(ItemTest):
         html1 = self.create_xblock(parent_usage_key=self.vert_usage_key, display_name='html1', category='html')
         self.html_usage_key = self.response_usage_key(html1)
 
-
     def _move_component(self, source_usage_key, target_usage_key, target_index=None):
         """
         Helper method to send move request and returns the response.
