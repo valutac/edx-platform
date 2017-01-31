@@ -15,9 +15,9 @@ function($, Backbone, _, gettext, HtmlUtils, StringUtils, XBlockUtils, MoveXBloc
         el: '.xblock-list-container',
 
         // parent info of currently displayed childs
-        parent_info: {},
+        parentInfo: {},
         // child info of currently displayed child XBlocks
-        childs_info: {},
+        childrenInfo: {},
         // list of visited parent XBlocks, needed for backward navigation
         visitedAncestors: null,
 
@@ -37,14 +37,13 @@ function($, Backbone, _, gettext, HtmlUtils, StringUtils, XBlockUtils, MoveXBloc
         },
 
         events: {
-            'click .button-forward': 'renderChilds'
+            'click .button-forward': 'renderChildren'
         },
 
         initialize: function(options) {
             this.visitedAncestors = [];
             this.template = HtmlUtils.template(MoveXBlockListViewTemplate);
             this.ancestorInfo = options.ancestorInfo;
-            this.listenTo(Backbone, 'move:backButtonPressed', this.handleBackButtonPress);
             this.listenTo(Backbone, 'move:breadcrumbButtonPressed', this.handleBreadcrumbButtonPress);
             this.renderXBlockInfo();
         },
@@ -54,58 +53,49 @@ function($, Backbone, _, gettext, HtmlUtils, StringUtils, XBlockUtils, MoveXBloc
                 this.$el,
                 this.template(
                     {
-                        xblocks: this.childs_info.childs,
+                        xblocks: this.childrenInfo.children,
                         noChildText: this.getNoChildText(),
                         categoryText: this.getCategoryText(),
-                        XBlocksCategory: this.childs_info.category,
+                        XBlocksCategory: this.childrenInfo.category,
                         forwardButtonSRText: this.getForwardButtonSRText(),
                         currentLocationIndex: this.getCurrentLocationIndex()
                     }
                 )
             );
-            Backbone.trigger('move:childsInfoRendered', this.breadcrumbInfo());
+            Backbone.trigger('move:childrenRendered', this.breadcrumbInfo());
             return this;
         },
 
-        renderChilds: function(event) {
+        renderChildren: function(event) {
             this.renderXBlockInfo(
                 'forward',
                 $(event.target).closest('.xblock-item').data('itemIndex')
             );
         },
 
-        renderParent: function(newParentIndex) {
-            this.renderXBlockInfo('backward', newParentIndex);
-        },
-
-        handleBackButtonPress: function() {
-            // TODO! improve `this.visitedAncestors.length - 2` mysterious calculation
-            this.renderParent(this.visitedAncestors.length - 2);
-        },
-
         handleBreadcrumbButtonPress: function(newParentIndex) {
-            this.renderParent(newParentIndex);
+            this.renderXBlockInfo('backward', newParentIndex);
         },
 
         renderXBlockInfo: function(direction, newParentIndex) {
             if (direction === undefined) {
-                this.parent_info.parent = this.model;
+                this.parentInfo.parent = this.model;
             } else if (direction === 'forward') {
                 // clicked child is the new parent
-                this.parent_info.parent = this.childs_info.childs[newParentIndex];
+                this.parentInfo.parent = this.childrenInfo.children[newParentIndex];
             } else if (direction === 'backward') {
                 // new parent will be one of visitedAncestors
-                this.parent_info.parent = this.visitedAncestors[newParentIndex];
+                this.parentInfo.parent = this.visitedAncestors[newParentIndex];
                 // remove visited ancestors
                 this.visitedAncestors.splice(newParentIndex);
             }
 
-            this.visitedAncestors.push(this.parent_info.parent);
+            this.visitedAncestors.push(this.parentInfo.parent);
 
-            if (this.parent_info.parent.get('child_info')) {
-                this.childs_info.childs = this.parent_info.parent.get('child_info').children;
+            if (this.parentInfo.parent.get('child_info')) {
+                this.childrenInfo.children = this.parentInfo.parent.get('child_info').children;
             } else {
-                this.childs_info.childs = [];
+                this.childrenInfo.children = [];
             }
 
             this.setDisplayedXBlocksCategories();
@@ -113,28 +103,28 @@ function($, Backbone, _, gettext, HtmlUtils, StringUtils, XBlockUtils, MoveXBloc
         },
 
         setDisplayedXBlocksCategories: function() {
-            this.parent_info.category = XBlockUtils.getXBlockType(
-                this.parent_info.parent.get('category'),
+            this.parentInfo.category = XBlockUtils.getXBlockType(
+                this.parentInfo.parent.get('category'),
                 // TODO! improve `this.visitedAncestors.length - 2` mysterious calculation
                 this.visitedAncestors[this.visitedAncestors.length - 2]
             );
-            this.childs_info.category = this.categoryRelationMap[this.parent_info.category];
+            this.childrenInfo.category = this.categoryRelationMap[this.parentInfo.category];
         },
 
         getCurrentLocationIndex: function() {
             var category, ancestorXBlock, currentLocationIndex;
 
-            if (this.childs_info.category === 'component' || this.childs_info.childs.length === 0) {
+            if (this.childrenInfo.category === 'component' || this.childrenInfo.children.length === 0) {
                 return currentLocationIndex;
             }
 
-            category = this.childs_info.childs[0].get('category');
+            category = this.childrenInfo.children[0].get('category');
             ancestorXBlock = _.find(
                 this.ancestorInfo.ancestors, function(ancestor) { return ancestor.category === category; }
             );
 
             if (ancestorXBlock) {
-                _.each(this.childs_info.childs, function(xblock, index) {
+                _.each(this.childrenInfo.children, function(xblock, index) {
                     if (ancestorXBlock.display_name === xblock.get('display_name') &&
                         ancestorXBlock.id === xblock.get('id')) {
                         currentLocationIndex = index;
@@ -146,13 +136,13 @@ function($, Backbone, _, gettext, HtmlUtils, StringUtils, XBlockUtils, MoveXBloc
         },
 
         getCategoryText: function() {
-            return this.categoriesText[this.childs_info.category];
+            return this.categoriesText[this.childrenInfo.category];
         },
 
         getForwardButtonSRText: function() {
             return StringUtils.interpolate(
                 gettext('Press button to see {XBlockCategory} childs'),
-                {XBlockCategory: this.childs_info.category}
+                {XBlockCategory: this.childrenInfo.category}
             );
         },
 
@@ -160,15 +150,14 @@ function($, Backbone, _, gettext, HtmlUtils, StringUtils, XBlockUtils, MoveXBloc
             return StringUtils.interpolate(
                 gettext('This {parentCategory} has no {childCategory}'),
                 {
-                    parentCategory: this.parent_info.category,
-                    childCategory: this.categoriesText[this.childs_info.category].toLowerCase()
+                    parentCategory: this.parentInfo.category,
+                    childCategory: this.categoriesText[this.childrenInfo.category].toLowerCase()
                 }
             );
         },
 
         breadcrumbInfo: function() {
             return {
-                backButtonEnabled: this.parent_info.category !== 'course',
                 breadcrumbs: _.map(this.visitedAncestors, function(ancestor) {
                     return ancestor.get('category') === 'course' ?
                            gettext('Course Outline') : ancestor.get('display_name');

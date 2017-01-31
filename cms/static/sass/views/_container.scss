@@ -338,42 +338,17 @@
   button {
     background: transparent;
     border-color: transparent;
+    padding: 0;
+    border: none;
   }
 
   .breadcrumb-container {
     margin-bottom: ($baseline/4);
     border: 1px solid #D9D9D9;
-    padding: ($baseline/2) 0 ($baseline/2) 0;
+    padding: ($baseline/2);
     background: #F2F8FB;
-    overflow: hidden;
-
-    button:not(.button-backward) {
-      padding: 0;
-      border: none;
-    }
-
-    .button-backward {
-      @include float(left);
-      padding-top: 0;
-      border-top: none;
-
-      &:disabled {
-        color: #d9d9d9;
-      }
-
-      .back-fa-icon {
-        @include rtl {
-          @include transform(rotate(180deg));
-        }
-      }
-    }
 
     .breadcrumbs {
-      @include float(left);
-      @include margin-left($baseline/4);
-      @include padding-left($baseline/2);
-      @include border-left(1px solid #D9D9D9);
-
       .bc-container {
         .breadcrumb-fa-icon {
           width: ($baseline);

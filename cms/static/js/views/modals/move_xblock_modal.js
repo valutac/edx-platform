@@ -71,30 +71,35 @@ function($, Backbone, _, gettext, BaseView, BaseModal, XBlockInfoModel, MoveXBlo
         fetchCourseOutline: function() {
             var self = this;
             $.when(
-                $.ajax({
-                    url: this.outlineURL,
-                    contentType: 'application/json',
-                    dataType: 'json',
-                    type: 'GET'
-                }),
-                $.ajax({
-                    url: this.XBlockAncestorInfoUrl,
-                    contentType: 'application/json',
-                    dataType: 'json',
-                    type: 'GET'
-                })
-            ).then(function(outlineResponse, ancestorResponse) {
+                this.fetchData(this.outlineURL),
+                this.fetchData(this.XBlockAncestorInfoUrl)
+            ).then(function(courseOutlineInfo, ancestorInfo) {
                 $('.ui-loading').addClass('is-hidden');
                 $('.breadcrumb-container').removeClass('is-hidden');
-                self.renderViews(outlineResponse[0], ancestorResponse[0]);
+                self.renderViews(courseOutlineInfo, ancestorInfo);
             });
         },
 
-        renderViews: function(outlineJson, ancestorInfo) {
+        fetchData: function(url) {
+            var deferred = $.Deferred();
+            $.ajax({
+                url: url,
+                contentType: 'application/json',
+                dataType: 'json',
+                type: 'GET'
+            }).done(function(data) {
+                deferred.resolve(data);
+            }).fail(function() {
+                deferred.reject();
+            });
+            return deferred.promise();
+        },
+
+        renderViews: function(courseOutlineInfo, ancestorInfo) {
             this.moveXBlockBreadcrumbView = new MoveXBlockBreadcrumbView({});
             this.moveXBlockListView = new MoveXBlockListView(
                 {
-                    model: new XBlockInfoModel(outlineJson, {parse: true}),
+                    model: new XBlockInfoModel(courseOutlineInfo, {parse: true}),
                     ancestorInfo: ancestorInfo
                 }
             );

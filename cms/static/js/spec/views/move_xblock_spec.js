@@ -6,9 +6,9 @@ define(['jquery', 'underscore', 'edx-ui-toolkit/js/utils/spec-helpers/ajax-helpe
         'use strict';
         describe('MoveXBlock', function() {
             var renderViews, createXBlockInfo, createCourseOutline, moveXBlockBreadcrumbView,
-                moveXBlockListView, parentToChildMap, categoryMap, verifyInfo, createChildXBlockInfo,
-                verifyBreadcrumbViewInfo, verifyListViewInfo, getDisplayedInfo, clickForwardButton, clickBackButton,
-                verifyXBlockInfo;
+                moveXBlockListView, parentToChildMap, categoryMap, createChildXBlockInfo,
+                verifyBreadcrumbViewInfo, verifyListViewInfo, getDisplayedInfo, clickForwardButton,
+                clickBreadcrumbButton, verifyXBlockInfo, nextCategory;
 
             parentToChildMap = {
                 course: 'section',
@@ -138,12 +138,6 @@ define(['jquery', 'underscore', 'edx-ui-toolkit/js/utils/spec-helpers/ajax-helpe
                     categories = _.keys(parentToChildMap).concat(['component']),
                     visitedCategories = categories.slice(0, _.indexOf(categories, category));
 
-                if (category === 'section') {
-                    expect($('.button-backward').is(':disabled')).toBeTruthy();
-                } else {
-                    expect($('.button-backward').is(':disabled')).toBeFalsy();
-                }
-
                 expect(displayedBreadcrumbs).toEqual(
                     _.map(visitedCategories, function(cat) {
                         return cat === 'course' ?
@@ -156,13 +150,16 @@ define(['jquery', 'underscore', 'edx-ui-toolkit/js/utils/spec-helpers/ajax-helpe
                 moveXBlockListView.$el.find('[data-item-index="' + buttonIndex + '"] button').click();
             };
 
-            clickBackButton = function() {
-                moveXBlockBreadcrumbView.$el.find('.button-backward').click();
+            clickBreadcrumbButton = function() {
+                moveXBlockBreadcrumbView.$el.find('.bc-container button').last().click();
+            };
+
+            nextCategory = function(direction, category) {
+                return direction === 'forward' ? parentToChildMap[category] : _.invert(parentToChildMap)[category];
             };
 
             verifyXBlockInfo = function(options, category, buttonIndex, direction, hasCurrentLocation) {
-                var expectedXBlocksCount = options[category],
-                    newCategory;
+                var expectedXBlocksCount = options[category];
 
                 verifyListViewInfo(category, expectedXBlocksCount, hasCurrentLocation);
                 verifyBreadcrumbViewInfo(category, buttonIndex);
@@ -172,36 +169,24 @@ define(['jquery', 'underscore', 'edx-ui-toolkit/js/utils/spec-helpers/ajax-helpe
                         return;
                     }
                     clickForwardButton(buttonIndex);
-                    newCategory = parentToChildMap[category];
                 } else if (direction === 'backward') {
                     if (category === 'section') {
                         return;
                     }
-                    clickBackButton();
-                    newCategory = _.invert(parentToChildMap)[category];
+                    clickBreadcrumbButton();
                 }
+                category = nextCategory(direction, category);  // eslint-disable-line no-param-reassign
 
-                verifyXBlockInfo(options, newCategory, buttonIndex, direction, hasCurrentLocation);
-            };
-
-            verifyInfo = function(options) {
-                _.each(_.range(options.section), function(item, index) {
-                    verifyXBlockInfo(options, 'section', index, 'forward', false);
-                    verifyXBlockInfo(options, 'component', index, 'backward', false);
-                });
+                verifyXBlockInfo(options, category, buttonIndex, direction, hasCurrentLocation);
             };
 
             it('renders views with correct information', function() {
-                var outlineOptions = {
-                        section: 2,
-                        subsection: 2,
-                        unit: 2,
-                        component: 2
-                    },
+                var outlineOptions = {section: 1, subsection: 1, unit: 1, component: 1},
                     outline = createCourseOutline(outlineOptions);
 
                 renderViews(outline);
-                verifyInfo(outlineOptions, 'section');
+                verifyXBlockInfo(outlineOptions, 'section', 0, 'forward', false);
+                verifyXBlockInfo(outlineOptions, 'component', 0, 'backward', false);
             });
 
             it('shows correct behavior on breadcrumb navigation', function() {

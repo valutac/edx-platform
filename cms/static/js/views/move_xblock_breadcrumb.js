@@ -14,19 +14,16 @@ function($, Backbone, _, gettext, HtmlUtils, StringUtils, MoveXBlockBreadcrumbVi
         el: '.breadcrumb-container',
 
         defaultRenderOptions: {
-            backButtonEnabled: false,
-            breadcrumbs: ['Course Outline'],
-            backButtonSRText: gettext('Press button to go back to parent')
+            breadcrumbs: ['Course Outline']
         },
 
         events: {
-            'click .button-backward': 'handleBackButtonPress',
             'click .parent-nav-button': 'handleBreadcrumbButtonPress'
         },
 
         initialize: function() {
             this.template = HtmlUtils.template(MoveXBlockBreadcrumbViewTemplate);
-            this.listenTo(Backbone, 'move:childsInfoRendered', this.updateView);
+            this.listenTo(Backbone, 'move:childrenRendered', this.updateView);
         },
 
         render: function(options) {
@@ -36,10 +33,6 @@ function($, Backbone, _, gettext, HtmlUtils, StringUtils, MoveXBlockBreadcrumbVi
             );
             Backbone.trigger('move:breadcrumbRendered');
             return this;
-        },
-
-        handleBackButtonPress: function() {
-            Backbone.trigger('move:backButtonPressed');
         },
 
         handleBreadcrumbButtonPress: function(event) {
