@@ -239,7 +239,8 @@ class LibraryContentModule(LibraryContentFields, XModule, StudioEditableModule):
                 "removed",
                 result=format_block_keys(block_keys['selected']),
                 removed=format_block_keys(block_keys['invalid']),
-                reason="invalid"
+                reason="invalid",
+                user_id=user_id,
             )
 
         if block_keys['overlimit']:
@@ -247,7 +248,8 @@ class LibraryContentModule(LibraryContentFields, XModule, StudioEditableModule):
                 "removed",
                 result=format_block_keys(block_keys['selected']),
                 removed=format_block_keys(block_keys['overlimit']),
-                reason="overlimit"
+                reason="overlimit",
+                user_id=user_id,
             )
 
         if block_keys['added']:
@@ -255,7 +257,7 @@ class LibraryContentModule(LibraryContentFields, XModule, StudioEditableModule):
                 "assigned",
                 result=format_block_keys(block_keys['selected']),
                 added=format_block_keys(block_keys['added']),
-                user_id=user_id
+                user_id=user_id,
             )
 
     def selected_children(self):
