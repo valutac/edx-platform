@@ -21,12 +21,12 @@ class CourseWikiPage(CoursePage):
 
     def open_editor(self):
         """
-        Display the editor for a wiki particle.
+        Display the editor for a wiki article.
         """
         edit_button = self.q(css='.fa-pencil')
         edit_button.click()
 
-    def show_changes(self):
+    def show_history(self):
         """
         Show the change history for a wiki article.
         """
@@ -99,9 +99,9 @@ class CourseWikiEditPage(CourseWikiSubviewPage):
         self.wait_for_element_presence('.alert-success', 'wait for the article to be saved')
 
 
-class CourseWikiChangesPage(CourseWikiSubviewPage):
+class CourseWikiHistoryPage(CourseWikiSubviewPage):
     """
-    Course wiki changes page.
+    Course wiki change history page.
     """
 
     def is_browser_on_page(self):

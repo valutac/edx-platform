@@ -39,7 +39,7 @@ from common.test.acceptance.pages.lms.login_and_register import CombinedLoginAnd
 from common.test.acceptance.pages.lms.track_selection import TrackSelectionPage
 from common.test.acceptance.pages.lms.pay_and_verify import PaymentAndVerificationFlow, FakePaymentPage
 from common.test.acceptance.pages.lms.course_wiki import (
-    CourseWikiPage, CourseWikiEditPage, CourseWikiChangesPage, CourseWikiChildrenPage
+    CourseWikiPage, CourseWikiEditPage, CourseWikiHistoryPage, CourseWikiChildrenPage
 )
 from common.test.acceptance.fixtures.course import CourseFixture, XBlockFixtureDesc, CourseUpdateDesc
 
@@ -628,10 +628,10 @@ class CourseWikiTest(UniqueCourseTest):
         """
         Verify the basic accessibility of changes wiki page.
         """
-        self.course_wiki_page.show_changes()
-        changes_page = CourseWikiChangesPage(self.browser, self.course_id, self.course_info)
-        changes_page.wait_for_page()
-        self._check_for_accessibility_errors(changes_page)
+        self.course_wiki_page.show_history()
+        history_page = CourseWikiHistoryPage(self.browser, self.course_id, self.course_info)
+        history_page.wait_for_page()
+        self._check_for_accessibility_errors(history_page)
 
     @attr('a11y')
     def test_children_a11y(self):
