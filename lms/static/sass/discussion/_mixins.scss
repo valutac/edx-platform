@@ -89,14 +89,8 @@
 }
 
 @mixin forum-user-label($color) {
-  @include margin-left($baseline/4);
-  @extend %t-weight5;
+  @extend %t-strong;
   font-size: $forum-small-font-size;
-  vertical-align: middle;
-  border-radius: $forum-border-radius;
-  padding: 0 ($baseline/5);
-  background: $color;
-  font-style: normal;
-  color: white;
+  color: $color;
   white-space: nowrap;
 }
