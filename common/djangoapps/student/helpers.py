@@ -244,17 +244,7 @@ def get_next_url_for_login_page(request):
     Otherwise, we go to the ?next= query param or to the dashboard if nothing else is
     specified.
     """
-    redirect_to = request.GET.get('next', None)
-
-    # if we get a redirect parameter, make sure it's safe. If it's not, drop the
-    # parameter.
-    if redirect_to and (not http.is_safe_url(redirect_to) or settings.STATIC_URL in redirect_to):
-        log.error(
-            u'Unsafe redirect parameter detected: %(redirect_to)r',
-            {"redirect_to": redirect_to}
-        )
-        redirect_to = None
-
+    redirect_to = get_redirect_to(request)
     if not redirect_to:
         try:
             redirect_to = reverse('dashboard')
@@ -268,6 +258,28 @@ def get_next_url_for_login_page(request):
         # Note: if we are resuming a third party auth pipeline, then the next URL will already
         # be saved in the session as part of the pipeline state. That URL will take priority
         # over this one.
+    return redirect_to
+
+
+def get_redirect_to(request):
+    """
+    Determine the redirect url and return if safe
+    :argument
+        request: request object
+
+    :returns: redirect url if safe else None
+    """
+    redirect_to = request.GET.get('next', None)
+
+    # if we get a redirect parameter, make sure it's safe. If it's not, drop the
+    # parameter.
+    if redirect_to and (not http.is_safe_url(redirect_to) or settings.STATIC_URL in redirect_to):
+        log.error(
+            u'Unsafe redirect parameter detected: %(redirect_to)r',
+            {"redirect_to": redirect_to}
+        )
+        redirect_to = None
+
     return redirect_to
 
 
