@@ -351,8 +351,6 @@ class TestLibraryContentAnalytics(LibraryContentTest):
             "result": [block_info],
             "previous_count": 0,
             "max_count": 1,
-            "course_id": unicode(child.location.course_key),
-            "user_id": self.lc_block.runtime.user_id,
         })
         self.publisher.reset_mock()
 

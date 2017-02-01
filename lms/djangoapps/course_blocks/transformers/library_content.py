@@ -7,6 +7,7 @@ from openedx.core.lib.block_structure.transformer import BlockStructureTransform
 from xmodule.library_content_module import LibraryContentModule
 from xmodule.modulestore.django import modulestore
 from eventtracking import tracker
+from track import contexts
 
 
 class ContentLibraryTransformer(FilteringTransformerMixin, BlockStructureTransformer):
@@ -172,11 +173,12 @@ class ContentLibraryTransformer(FilteringTransformerMixin, BlockStructureTransfo
                 "previous_count": previous_count,
                 "result": result,
                 "max_count": max_count,
-                "user_id": user_id,
-                "course_id": unicode(location.course_key),
             }
             event_data.update(kwargs)
-            tracker.emit("edx.librarycontentblock.content.{}".format(event_name), event_data)
+            context = contexts.course_context_from_course_id(location.course_key)
+            context['user_id'] = user_id
+            with tracker.get_tracker().context(event_name, context):
+                tracker.emit("edx.librarycontentblock.content.{}".format(event_name), event_data)
 
         LibraryContentModule.publish_selected_children_events(
             block_keys,
