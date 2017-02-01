@@ -177,8 +177,9 @@ class ContentLibraryTransformer(FilteringTransformerMixin, BlockStructureTransfo
             event_data.update(kwargs)
             context = contexts.course_context_from_course_id(location.course_key)
             context['user_id'] = user_id
-            with tracker.get_tracker().context(event_name, context):
-                tracker.emit("edx.librarycontentblock.content.{}".format(event_name), event_data)
+            full_event_name = "edx.librarycontentblock.content.{}".format(event_name)
+            with tracker.get_tracker().context(full_event_name, context):
+                tracker.emit(full_event_name, event_data)
 
         LibraryContentModule.publish_selected_children_events(
             block_keys,

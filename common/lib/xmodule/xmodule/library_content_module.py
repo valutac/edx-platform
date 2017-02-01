@@ -12,8 +12,6 @@ from lazy import lazy
 from .mako_module import MakoModuleDescriptor
 from opaque_keys.edx.locator import LibraryLocator
 import random
-from eventtracking import tracker
-from track import contexts
 from webob import Response
 from xblock.core import XBlock
 from xblock.fields import Scope, String, List, Integer, Boolean
@@ -195,10 +193,7 @@ class LibraryContentModule(LibraryContentFields, XModule, StudioEditableModule):
             "max_count": self.max_count,
         }
         event_data.update(kwargs)
-        context = contexts.course_context_from_course_id(self.course_id)
-        context['user_id'] = user_id
-        with tracker.get_tracker().context(event_name, context):
-            self.runtime.publish(self, "edx.librarycontentblock.content.{}".format(event_name), event_data)
+        self.runtime.publish(self, "edx.librarycontentblock.content.{}".format(event_name), event_data)
         self._last_event_result_count = len(result)  # pylint: disable=attribute-defined-outside-init
 
     @classmethod
