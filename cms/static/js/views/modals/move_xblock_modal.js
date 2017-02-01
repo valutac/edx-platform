@@ -161,20 +161,16 @@ function($, Backbone, _, gettext, BaseView, BaseModal, XBlockInfoModel, MoveXBlo
                                     displayName: self.sourceXBlockInfo.get('display_name')
                                 }
                             ),
-                            StringUtils.interpolate(
-                                gettext('{link_start}Take me to the new location{link_end}'),
+                            HtmlUtils.interpolateHtml(
+                                HtmlUtils.HTML('<a href="/container/{newLocator}">{linkText}</a>'),
                                 {
-                                    link_start: HtmlUtils.HTML('<a href="/container/' + response.parent_locator + '">'),
-                                    link_end: HtmlUtils.HTML('</a>')
+                                    newLocator: response.parent_locator,
+                                    linkText: gettext('Take me to the new location')
                                 }
                             ),
                             HtmlUtils.interpolateHtml(
                                 HtmlUtils.HTML(
-                                    '<a class="action-undo-move" href="#" ' +
-                                    'data-source-display-name="{displayName}" ' +
-                                    'data-source-locator="{sourceLocator}" ' +
-                                    'data-source-parent-locator="{sourceParentLocator}" ' +
-                                    'data-target-index="{targetIndex}">{undoMove}</a>'
+                                    '<a class="action-undo-move" href="#" data-source-display-name="{displayName}" data-source-locator="{sourceLocator}" data-source-parent-locator="{sourceParentLocator}" data-target-index="{targetIndex}">{undoMove}</a>'   // eslint-disable-line max-len
                                 ),
                                 {
                                     displayName: self.sourceXBlockInfo.get('display_name'),
