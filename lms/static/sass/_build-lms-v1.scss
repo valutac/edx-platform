@@ -14,9 +14,11 @@
 
 // Pattern Library shims
 @import 'edx-pattern-library-shims/base/variables';
+@import 'edx-pattern-library-shims/breadcrumbs';
 @import 'edx-pattern-library-shims/buttons';
 
 // base - elements
+@import 'elements/banners';
 @import 'elements/controls';
 @import 'elements/creative-commons';
 @import 'elements/icons';
@@ -53,7 +55,6 @@
 
 // base - specific views
 @import "views/account-settings";
-@import "views/learner-profile";
 @import 'views/login-register';
 @import 'views/verification';
 @import 'views/decoupled-verification';
@@ -62,15 +63,18 @@
 @import 'views/support';
 @import 'views/oauth2';
 @import "views/financial-assistance";
-@import 'views/bookmarks';
 @import 'course/auto-cert';
 @import 'views/api-access';
+
+// features
+@import 'features/bookmarks-v1';
+@import 'features/learner-profile';
 
 // search
 @import 'search/search';
 
 // news
-@import 'news';
+@import 'notifications';
 
 @import 'mixins';
 @import 'mixins-inherited';
@@ -79,3 +83,4 @@
 // overrides
 @import 'developer'; // used for any developer-created scss that needs further polish/refactoring
 @import 'shame';     // used for any bad-form/orphaned scss
+@import 'experiments';     // used for any ab tests and other experiments

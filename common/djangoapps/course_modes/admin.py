@@ -9,7 +9,6 @@ from django.contrib import admin
 from pytz import timezone, UTC
 
 from opaque_keys.edx.keys import CourseKey
-from opaque_keys.edx.locations import SlashSeparatedCourseKey
 from opaque_keys import InvalidKeyError
 
 from util.date_utils import get_time_display
@@ -28,21 +27,17 @@ from course_modes.models import CourseMode, CourseModeExpirationConfig
 # the verification deadline table won't exist.
 from lms.djangoapps.verify_student import models as verification_models
 
+COURSE_MODE_SLUG_CHOICES = [(mode_slug, mode_slug) for mode_slug in settings.COURSE_ENROLLMENT_MODES]
+
 
 class CourseModeForm(forms.ModelForm):
+    """
+    Admin form for adding a course mode.
+    """
 
     class Meta(object):
         model = CourseMode
         fields = '__all__'
-
-    COURSE_MODE_SLUG_CHOICES = (
-        [(CourseMode.DEFAULT_MODE_SLUG, CourseMode.DEFAULT_MODE_SLUG)] +
-        [(mode_slug, mode_slug) for mode_slug in CourseMode.VERIFIED_MODES] +
-        [(CourseMode.NO_ID_PROFESSIONAL_MODE, CourseMode.NO_ID_PROFESSIONAL_MODE)] +
-        [(mode_slug, mode_slug) for mode_slug in CourseMode.CREDIT_MODES] +
-        # need to keep legacy modes around for awhile
-        [(CourseMode.DEFAULT_SHOPPINGCART_MODE_SLUG, CourseMode.DEFAULT_SHOPPINGCART_MODE_SLUG)]
-    )
 
     mode_slug = forms.ChoiceField(choices=COURSE_MODE_SLUG_CHOICES, label=_("Mode"))
 
@@ -63,6 +58,9 @@ class CourseModeForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super(CourseModeForm, self).__init__(*args, **kwargs)
+
+        if self.data.get('course'):
+            self.data['course'] = CourseKey.from_string(self.data['course'])
 
         default_tz = timezone(settings.TIME_ZONE)
 
@@ -86,14 +84,11 @@ class CourseModeForm(forms.ModelForm):
             )
 
     def clean_course_id(self):
-        course_id = self.cleaned_data['course_id']
+        course_id = self.cleaned_data['course']
         try:
             course_key = CourseKey.from_string(course_id)
         except InvalidKeyError:
-            try:
-                course_key = SlashSeparatedCourseKey.from_deprecated_string(course_id)
-            except InvalidKeyError:
-                raise forms.ValidationError("Cannot make a valid CourseKey from id {}!".format(course_id))
+            raise forms.ValidationError("Cannot make a valid CourseKey from id {}!".format(course_id))
 
         if not modulestore().has_course(course_key):
             raise forms.ValidationError("Cannot find course with id {} in the modulestore".format(course_id))
@@ -158,7 +153,7 @@ class CourseModeForm(forms.ModelForm):
         """
         # Trigger validation so we can access cleaned data
         if self.is_valid():
-            course_key = self.cleaned_data.get("course_id")
+            course = self.cleaned_data.get("course")
             verification_deadline = self.cleaned_data.get("verification_deadline")
             mode_slug = self.cleaned_data.get("mode_slug")
 
@@ -166,8 +161,11 @@ class CourseModeForm(forms.ModelForm):
             # we need to handle saving this ourselves.
             # Note that verification deadline can be `None` here if
             # the deadline is being disabled.
-            if course_key is not None and mode_slug in CourseMode.VERIFIED_MODES:
-                verification_models.VerificationDeadline.set_deadline(course_key, verification_deadline)
+            if course is not None and mode_slug in CourseMode.VERIFIED_MODES:
+                verification_models.VerificationDeadline.set_deadline(
+                    course.id,
+                    verification_deadline
+                )
 
         return super(CourseModeForm, self).save(commit=commit)
 
@@ -177,7 +175,7 @@ class CourseModeAdmin(admin.ModelAdmin):
     form = CourseModeForm
 
     fields = (
-        'course_id',
+        'course',
         'mode_slug',
         'mode_display_name',
         'min_price',
@@ -188,11 +186,11 @@ class CourseModeAdmin(admin.ModelAdmin):
         'bulk_sku'
     )
 
-    search_fields = ('course_id',)
+    search_fields = ('course',)
 
     list_display = (
         'id',
-        'course_id',
+        'course',
         'mode_slug',
         'min_price',
         'expiration_datetime_custom',

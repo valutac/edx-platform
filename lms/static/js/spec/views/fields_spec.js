@@ -231,6 +231,7 @@ define(['backbone', 'jquery', 'underscore', 'edx-ui-toolkit/js/utils/spec-helper
                     }
                     expect(view.$(dropdownSelectClass).length).toBe(1);
                     view.$(dropdownSelectClass).val(FieldViewsSpecHelpers.SELECT_OPTIONS[0]).change();
+                    view.$(dropdownSelectClass).focusout();
                     expect(view.fieldValue()).toBe(FieldViewsSpecHelpers.SELECT_OPTIONS[0][0]);
 
                     AjaxHelpers.respondWithNoContent(requests);
@@ -325,19 +326,6 @@ define(['backbone', 'jquery', 'underscore', 'edx-ui-toolkit/js/utils/spec-helper
                 expect(view.$('.u-field-value > a .u-field-link-title-' + view.options.valueAttribute).text().trim()).toBe(fieldData.linkTitle);
             });
 
-            it('correctly renders LinkFieldView', function() {
-                var fieldData = FieldViewsSpecHelpers.createFieldData(FieldViews.LinkFieldView, {
-                    title: 'Title',
-                    linkTitle: 'Link title',
-                    helpMessage: 'Click the link.',
-                    valueAttribute: 'password-reset'
-                });
-                var view = new FieldViews.LinkFieldView(fieldData).render();
-
-                FieldViewsSpecHelpers.expectTitleAndMessageToContain(view, fieldData.title, fieldData.helpMessage);
-                expect(view.$('.u-field-value > a .u-field-link-title-' + view.options.valueAttribute).text().trim()).toBe(fieldData.linkTitle);
-            });
-
             it("can't persist changes if persistChanges is off", function() {
                 requests = AjaxHelpers.requests(this);
                 var fieldClasses = [
@@ -348,6 +336,22 @@ define(['backbone', 'jquery', 'underscore', 'edx-ui-toolkit/js/utils/spec-helper
                 for (var i = 0; i < fieldClasses.length; i++) {
                     FieldViewsSpecHelpers.verifyPersistence(fieldClasses[i], requests);
                 }
+            });
+
+            it('correctly renders DateFieldView', function() {
+                var fieldData = FieldViewsSpecHelpers.createFieldData(FieldViews.DateFieldView, {
+                        title: 'Title',
+                        helpMessage: '',
+                        dateFormat: 'MMM YYYY',
+                        valueAttribute: 'date_joined',
+                        userLanguage: 'en-US',
+                        userTimezone: 'America/New_York'
+                    }),
+                    joinDate = new Date(1990, 0, 15),
+                    view;
+                fieldData.model.set({date_joined: joinDate.toDateString()});
+                view = new FieldViews.DateFieldView(fieldData).render();
+                expect(view.$('.u-field-value').text().trim()).toBe('Jan 1990');
             });
         });
     });

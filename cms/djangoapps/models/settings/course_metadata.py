@@ -1,12 +1,14 @@
 """
 Django module for Course Metadata class -- manages advanced settings and related parameters
 """
+from django.conf import settings
+from django.utils.translation import ugettext as _
 from xblock.fields import Scope
+
+from openedx.core.djangoapps.waffle_utils import WaffleSwitchNamespace
+
 from xblock_django.models import XBlockStudioConfigurationFlag
 from xmodule.modulestore.django import modulestore
-
-from django.utils.translation import ugettext as _
-from django.conf import settings
 
 
 class CourseMetadata(object):
@@ -54,6 +56,7 @@ class CourseMetadata(object):
         'exam_review_rules',
         'hide_after_due',
         'self_paced',
+        'show_correctness',
         'chrome',
         'default_tab',
     ]
@@ -95,10 +98,22 @@ class CourseMetadata(object):
             filtered_list.append('enable_ccx')
             filtered_list.append('ccx_connector')
 
+        # Do not show "Issue Open Badges" in Studio Advanced Settings
+        # if the feature is disabled.
+        if not settings.FEATURES.get('ENABLE_OPENBADGES'):
+            filtered_list.append('issue_badges')
+
         # If the XBlockStudioConfiguration table is not being used, there is no need to
         # display the "Allow Unsupported XBlocks" setting.
         if not XBlockStudioConfigurationFlag.is_enabled():
             filtered_list.append('allow_unsupported_xblocks')
+
+        # TODO: https://openedx.atlassian.net/browse/EDUCATOR-736
+        # Before we roll out the auto-certs feature, move this to a good, shared
+        # place such that we're not repeating code found in LMS.
+        switches = WaffleSwitchNamespace(name=u'certificates', log_prefix=u'Certificates: ')
+        if not switches.is_enabled(u'instructor_paced_only'):
+            filtered_list.append('certificate_available_date')
 
         return filtered_list
 
@@ -125,10 +140,16 @@ class CourseMetadata(object):
         for field in descriptor.fields.values():
             if field.scope != Scope.settings:
                 continue
+
+            field_help = _(field.help)                  # pylint: disable=translation-of-non-string
+            help_args = field.runtime_options.get('help_format_args')
+            if help_args is not None:
+                field_help = field_help.format(**help_args)
+
             result[field.name] = {
                 'value': field.read_json(descriptor),
                 'display_name': _(field.display_name),    # pylint: disable=translation-of-non-string
-                'help': _(field.help),                    # pylint: disable=translation-of-non-string
+                'help': field_help,
                 'deprecated': field.runtime_options.get('deprecated', False)
             }
         return result

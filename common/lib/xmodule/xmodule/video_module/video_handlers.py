@@ -239,7 +239,7 @@ class VideoStudentViewHandlers(object):
             try:
                 transcript = self.translation(request.GET.get('videoId', None), transcripts)
             except (TypeError, NotFoundError) as ex:
-                log.info(ex.message)
+                log.debug(ex.message)
                 # Try to return static URL redirection as last resort
                 # if no translation is required
                 return self.get_static_transcript(request, transcripts)
@@ -269,13 +269,14 @@ class VideoStudentViewHandlers(object):
                     headerlist=[
                         ('Content-Disposition', 'attachment; filename="{}"'.format(transcript_filename.encode('utf8'))),
                         ('Content-Language', self.transcript_language),
-                    ]
+                    ],
+                    charset='utf8'
                 )
                 response.content_type = transcript_mime_type
 
         elif dispatch.startswith('available_translations'):
 
-            available_translations = self.available_translations(transcripts)
+            available_translations = self.available_translations(transcripts, verify_assets=True)
             if available_translations:
                 response = Response(json.dumps(available_translations))
                 response.content_type = 'application/json'

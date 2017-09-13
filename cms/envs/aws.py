@@ -62,7 +62,7 @@ CELERY_RESULT_BACKEND = 'djcelery.backends.cache:CacheBackend'
 
 # When the broker is behind an ELB, use a heartbeat to refresh the
 # connection and to detect if it has been dropped.
-BROKER_HEARTBEAT = 10.0
+BROKER_HEARTBEAT = 60.0
 BROKER_HEARTBEAT_CHECKRATE = 2
 
 # Each worker should only fetch one message at a time
@@ -106,6 +106,10 @@ if STATIC_URL_BASE:
 # DEFAULT_COURSE_ABOUT_IMAGE_URL specifies the default image to show for courses that don't provide one
 DEFAULT_COURSE_ABOUT_IMAGE_URL = ENV_TOKENS.get('DEFAULT_COURSE_ABOUT_IMAGE_URL', DEFAULT_COURSE_ABOUT_IMAGE_URL)
 
+# MEDIA_ROOT specifies the directory where user-uploaded files are stored.
+MEDIA_ROOT = ENV_TOKENS.get('MEDIA_ROOT', MEDIA_ROOT)
+MEDIA_URL = ENV_TOKENS.get('MEDIA_URL', MEDIA_URL)
+
 # GITHUB_REPO_ROOT is the base directory
 # for course data
 GITHUB_REPO_ROOT = ENV_TOKENS.get('GITHUB_REPO_ROOT', GITHUB_REPO_ROOT)
@@ -116,6 +120,7 @@ GITHUB_REPO_ROOT = ENV_TOKENS.get('GITHUB_REPO_ROOT', GITHUB_REPO_ROOT)
 STATIC_ROOT_BASE = ENV_TOKENS.get('STATIC_ROOT_BASE', None)
 if STATIC_ROOT_BASE:
     STATIC_ROOT = path(STATIC_ROOT_BASE) / EDX_PLATFORM_REVISION
+    WEBPACK_LOADER['DEFAULT']['STATS_FILE'] = STATIC_ROOT / "webpack-stats.json"
 
 EMAIL_BACKEND = ENV_TOKENS.get('EMAIL_BACKEND', EMAIL_BACKEND)
 EMAIL_FILE_PATH = ENV_TOKENS.get('EMAIL_FILE_PATH', None)
@@ -221,6 +226,8 @@ GIT_REPO_EXPORT_DIR = ENV_TOKENS.get('GIT_REPO_EXPORT_DIR', '/edx/var/edxapp/exp
 # Translation overrides
 LANGUAGES = ENV_TOKENS.get('LANGUAGES', LANGUAGES)
 LANGUAGE_CODE = ENV_TOKENS.get('LANGUAGE_CODE', LANGUAGE_CODE)
+LANGUAGE_COOKIE = ENV_TOKENS.get('LANGUAGE_COOKIE', LANGUAGE_COOKIE)
+
 USE_I18N = ENV_TOKENS.get('USE_I18N', USE_I18N)
 
 ENV_FEATURES = ENV_TOKENS.get('FEATURES', {})
@@ -239,9 +246,9 @@ LOGGING = get_logger_config(LOG_DIR,
                             service_variant=SERVICE_VARIANT)
 
 #theming start:
-PLATFORM_NAME = ENV_TOKENS.get('PLATFORM_NAME', 'edX')
-STUDIO_NAME = ENV_TOKENS.get('STUDIO_NAME', 'edX Studio')
-STUDIO_SHORT_NAME = ENV_TOKENS.get('STUDIO_SHORT_NAME', 'Studio')
+PLATFORM_NAME = ENV_TOKENS.get('PLATFORM_NAME', PLATFORM_NAME)
+STUDIO_NAME = ENV_TOKENS.get('STUDIO_NAME', STUDIO_NAME)
+STUDIO_SHORT_NAME = ENV_TOKENS.get('STUDIO_SHORT_NAME', STUDIO_SHORT_NAME)
 
 # Event Tracking
 if "TRACKING_IGNORE_URL_PATTERNS" in ENV_TOKENS:
@@ -299,9 +306,16 @@ AWS_SECRET_ACCESS_KEY = AUTH_TOKENS["AWS_SECRET_ACCESS_KEY"]
 if AWS_SECRET_ACCESS_KEY == "":
     AWS_SECRET_ACCESS_KEY = None
 
+AWS_STORAGE_BUCKET_NAME = AUTH_TOKENS.get('AWS_STORAGE_BUCKET_NAME', 'edxuploads')
+
 # Disabling querystring auth instructs Boto to exclude the querystring parameters (e.g. signature, access key) it
 # normally appends to every returned URL.
 AWS_QUERYSTRING_AUTH = AUTH_TOKENS.get('AWS_QUERYSTRING_AUTH', True)
+
+AWS_DEFAULT_ACL = 'private'
+AWS_BUCKET_ACL = AWS_DEFAULT_ACL
+AWS_QUERYSTRING_EXPIRE = 7 * 24 * 60 * 60  # 7 days
+AWS_S3_CUSTOM_DOMAIN = AUTH_TOKENS.get('AWS_S3_CUSTOM_DOMAIN', 'edxuploads.s3.amazonaws.com')
 
 if AUTH_TOKENS.get('DEFAULT_FILE_STORAGE'):
     DEFAULT_FILE_STORAGE = AUTH_TOKENS.get('DEFAULT_FILE_STORAGE')
@@ -309,6 +323,15 @@ elif AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY:
     DEFAULT_FILE_STORAGE = 'storages.backends.s3boto.S3BotoStorage'
 else:
     DEFAULT_FILE_STORAGE = 'django.core.files.storage.FileSystemStorage'
+
+COURSE_IMPORT_EXPORT_BUCKET = ENV_TOKENS.get('COURSE_IMPORT_EXPORT_BUCKET', '')
+
+if COURSE_IMPORT_EXPORT_BUCKET:
+    COURSE_IMPORT_EXPORT_STORAGE = 'contentstore.storage.ImportExportS3Storage'
+else:
+    COURSE_IMPORT_EXPORT_STORAGE = DEFAULT_FILE_STORAGE
+
+USER_TASKS_ARTIFACT_STORAGE = COURSE_IMPORT_EXPORT_STORAGE
 
 DATABASES = AUTH_TOKENS['DATABASES']
 
@@ -363,6 +386,9 @@ BROKER_URL = "{0}://{1}:{2}@{3}/{4}".format(CELERY_BROKER_TRANSPORT,
                                             CELERY_BROKER_VHOST)
 BROKER_USE_SSL = ENV_TOKENS.get('CELERY_BROKER_USE_SSL', False)
 
+# Message expiry time in seconds
+CELERY_EVENT_QUEUE_TTL = ENV_TOKENS.get('CELERY_EVENT_QUEUE_TTL', None)
+
 # Allow CELERY_QUEUES to be overwritten by ENV_TOKENS,
 ENV_CELERY_QUEUES = ENV_TOKENS.get('CELERY_QUEUES', None)
 if ENV_CELERY_QUEUES:
@@ -374,6 +400,7 @@ ALTERNATE_QUEUES = [
     DEFAULT_PRIORITY_QUEUE.replace(QUEUE_VARIANT, alternate + '.')
     for alternate in ALTERNATE_QUEUE_ENVS
 ]
+
 CELERY_QUEUES.update(
     {
         alternate: {}
@@ -381,6 +408,9 @@ CELERY_QUEUES.update(
         if alternate not in CELERY_QUEUES.keys()
     }
 )
+
+# Queue to use for updating grades due to grading policy change
+POLICY_CHANGE_GRADES_ROUTING_KEY = ENV_TOKENS.get('POLICY_CHANGE_GRADES_ROUTING_KEY', LOW_PRIORITY_QUEUE)
 
 # Event tracking
 TRACKING_BACKENDS.update(AUTH_TOKENS.get("TRACKING_BACKENDS", {}))
@@ -417,6 +447,10 @@ ADVANCED_PROBLEM_TYPES = ENV_TOKENS.get('ADVANCED_PROBLEM_TYPES', ADVANCED_PROBL
 ################ VIDEO UPLOAD PIPELINE ###############
 
 VIDEO_UPLOAD_PIPELINE = ENV_TOKENS.get('VIDEO_UPLOAD_PIPELINE', VIDEO_UPLOAD_PIPELINE)
+
+################ VIDEO IMAGE STORAGE ###############
+
+VIDEO_IMAGE_SETTINGS = ENV_TOKENS.get('VIDEO_IMAGE_SETTINGS', VIDEO_IMAGE_SETTINGS)
 
 ################ PUSH NOTIFICATIONS ###############
 
@@ -475,4 +509,16 @@ AFFILIATE_COOKIE_NAME = ENV_TOKENS.get('AFFILIATE_COOKIE_NAME', AFFILIATE_COOKIE
 
 ############## Settings for Studio Context Sensitive Help ##############
 
-DOC_LINK_BASE_URL = ENV_TOKENS.get('DOC_LINK_BASE_URL', DOC_LINK_BASE_URL)
+HELP_TOKENS_BOOKS = ENV_TOKENS.get('HELP_TOKENS_BOOKS', HELP_TOKENS_BOOKS)
+
+############## Settings for CourseGraph ############################
+COURSEGRAPH_JOB_QUEUE = ENV_TOKENS.get('COURSEGRAPH_JOB_QUEUE', LOW_PRIORITY_QUEUE)
+
+########################## Parental controls config  #######################
+
+# The age at which a learner no longer requires parental consent, or None
+# if parental consent is never required.
+PARENTAL_CONSENT_AGE_LIMIT = ENV_TOKENS.get(
+    'PARENTAL_CONSENT_AGE_LIMIT',
+    PARENTAL_CONSENT_AGE_LIMIT
+)

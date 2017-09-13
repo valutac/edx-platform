@@ -106,6 +106,10 @@ FEATURES['ENABLE_DISCUSSION_SERVICE'] = False
 # We do not yet understand why this occurs. Setting this to true is a stopgap measure
 USE_I18N = True
 
+# Override the test stub webpack_loader that is installed in test.py.
+INSTALLED_APPS = tuple(app for app in INSTALLED_APPS if app != 'openedx.tests.util.webpack_loader')
+INSTALLED_APPS += ('webpack_loader',)
+
 # Include the lettuce app for acceptance testing, including the 'harvest' django-admin command
 # django.contrib.staticfiles used to be loaded by lettuce, now we must add it ourselves
 # django.contrib.staticfiles is not added to lms as there is a ^/static$ route built in to the app
@@ -132,6 +136,7 @@ except ImportError:
 YOUTUBE['API'] = "http://127.0.0.1:{0}/get_youtube_api/".format(YOUTUBE_PORT)
 YOUTUBE['METADATA_URL'] = "http://127.0.0.1:{0}/test_youtube/".format(YOUTUBE_PORT)
 YOUTUBE['TEXT_API']['url'] = "127.0.0.1:{0}/test_transcripts_youtube/".format(YOUTUBE_PORT)
+YOUTUBE['TEST_TIMEOUT'] = 1500
 
 # Generate a random UUID so that different runs of acceptance tests don't break each other
 import uuid

@@ -2,49 +2,50 @@
 """Tests for certificates views. """
 
 import json
-import ddt
-from uuid import uuid4
-from nose.plugins.attrib import attr
-from mock import patch
-from urllib import urlencode
 from collections import OrderedDict
+from urllib import urlencode
+from uuid import uuid4
 
+import ddt
+import datetime
 from django.conf import settings
 from django.core.urlresolvers import reverse
 from django.test.client import Client, RequestFactory
 from django.test.utils import override_settings
+from util.date_utils import strftime_localized
+from mock import patch
+from nose.plugins.attrib import attr
 
+from certificates.api import get_certificate_url
+from certificates.models import (
+    CertificateHtmlViewConfiguration,
+    CertificateSocialNetworks,
+    CertificateStatuses,
+    CertificateTemplate,
+    CertificateTemplateAsset,
+    GeneratedCertificate
+)
+from certificates.tests.factories import (
+    CertificateHtmlViewConfigurationFactory,
+    GeneratedCertificateFactory,
+    LinkedInAddToProfileConfigurationFactory
+)
 from course_modes.models import CourseMode
 from lms.djangoapps.badges.events.course_complete import get_completion_badge
 from lms.djangoapps.badges.tests.factories import (
     BadgeAssertionFactory,
-    CourseCompleteImageConfigurationFactory,
     BadgeClassFactory,
+    CourseCompleteImageConfigurationFactory
 )
 from lms.djangoapps.grades.tests.utils import mock_passing_grade
+from openedx.core.djangoapps.certificates.config import waffle
 from openedx.core.lib.tests.assertions.events import assert_event_matches
-from student.tests.factories import UserFactory, CourseEnrollmentFactory
 from student.roles import CourseStaffRole
+from student.tests.factories import CourseEnrollmentFactory, UserFactory
 from track.tests import EventTrackingTestCase
 from util import organizations_helpers as organizations_api
-from xmodule.modulestore.tests.factories import CourseFactory
 from xmodule.modulestore.tests.django_utils import ModuleStoreTestCase
-
-from certificates.api import get_certificate_url
-from certificates.models import (
-    GeneratedCertificate,
-    CertificateStatuses,
-    CertificateSocialNetworks,
-    CertificateTemplate,
-    CertificateHtmlViewConfiguration,
-    CertificateTemplateAsset,
-)
-
-from certificates.tests.factories import (
-    CertificateHtmlViewConfigurationFactory,
-    LinkedInAddToProfileConfigurationFactory,
-    GeneratedCertificateFactory,
-)
+from xmodule.modulestore.tests.factories import CourseFactory
 
 FEATURES_WITH_CERTS_ENABLED = settings.FEATURES.copy()
 FEATURES_WITH_CERTS_ENABLED['CERTIFICATES_HTML_VIEW'] = True
@@ -75,7 +76,10 @@ class CommonCertificatesTestCase(ModuleStoreTestCase):
         super(CommonCertificatesTestCase, self).setUp()
         self.client = Client()
         self.course = CourseFactory.create(
-            org='testorg', number='run1', display_name='refundable course'
+            org='testorg',
+            number='run1',
+            display_name='refundable course',
+            certificate_available_date=datetime.datetime.today() - datetime.timedelta(days=1),
         )
         self.course_id = self.course.location.course_key
         self.user = UserFactory.create(
@@ -721,7 +725,7 @@ class CertificatesViewsTests(CommonCertificatesTestCase):
             course_id=unicode(self.course.id)
         )
         self.cert.delete()
-        self.assertEqual(len(GeneratedCertificate.eligible_certificates.all()), 0)
+        self.assertListEqual(list(GeneratedCertificate.eligible_certificates.all()), [])
 
         response = self.client.get(test_url)
         self.assertIn('invalid', response.content)
@@ -744,7 +748,7 @@ class CertificatesViewsTests(CommonCertificatesTestCase):
         preview mode. Either the certificate is marked active or not.
         """
         self.cert.delete()
-        self.assertEqual(len(GeneratedCertificate.eligible_certificates.all()), 0)
+        self.assertListEqual(list(GeneratedCertificate.eligible_certificates.all()), [])
         self._add_course_certificates(count=1, signatory_count=2)
         test_url = get_certificate_url(
             user_id=self.user.id,
@@ -758,14 +762,14 @@ class CertificatesViewsTests(CommonCertificatesTestCase):
         CourseStaffRole(self.course.id).add_users(self.user)
 
         response = self.client.get(test_url + '?preview=honor')
-        self.assertNotIn(self.course.display_name, response.content)
+        self.assertNotIn(self.course.display_name.encode('utf-8'), response.content)
         self.assertIn('course_title_0', response.content)
         self.assertIn('Signatory_Title 0', response.content)
 
         # mark certificate inactive but accessing in preview mode.
         self._add_course_certificates(count=1, signatory_count=2, is_active=False)
         response = self.client.get(test_url + '?preview=honor')
-        self.assertNotIn(self.course.display_name, response.content)
+        self.assertNotIn(self.course.display_name.encode('utf-8'), response.content)
         self.assertIn('course_title_0', response.content)
         self.assertIn('Signatory_Title 0', response.content)
 
@@ -786,9 +790,45 @@ class CertificatesViewsTests(CommonCertificatesTestCase):
         # user has already has certificate generated for 'honor' mode
         # so let's try to preview in 'verified' mode.
         response = self.client.get(test_url + '?preview=verified')
-        self.assertNotIn(self.course.display_name, response.content)
+        self.assertNotIn(self.course.display_name.encode('utf-8'), response.content)
         self.assertIn('course_title_0', response.content)
         self.assertIn('Signatory_Title 0', response.content)
+
+    @override_settings(FEATURES=FEATURES_WITH_CERTS_ENABLED)
+    @ddt.data(
+        (-2, True),
+        (-2, False),
+        (10, False)
+    )
+    @ddt.unpack
+    def test_html_view_certificate_available_date_for_instructor_paced_courses(self, cert_avail_delta, self_paced):
+        """
+        test certificate web view should display the certificate available date
+        as the issued date for instructor-paced courses
+        """
+        self.course.self_paced = self_paced
+        today = datetime.datetime.today()
+        self.course.certificate_available_date = today + datetime.timedelta(cert_avail_delta)
+        self.store.update_item(self.course, self.user.id)
+        self._add_course_certificates(count=1, signatory_count=1, is_active=True)
+        test_url = get_certificate_url(
+            user_id=self.user.id,
+            course_id=unicode(self.course.id)
+        )
+
+        if self_paced or self.course.certificate_available_date > today:
+            expected_date = today
+        else:
+            expected_date = self.course.certificate_available_date
+        with waffle.waffle().override(waffle.SELF_PACED_ONLY, active=True):
+            with waffle.waffle().override(waffle.INSTRUCTOR_PACED_ONLY, active=True):
+                response = self.client.get(test_url)
+        date = '{month} {day}, {year}'.format(
+            month=strftime_localized(expected_date, "%B"),
+            day=expected_date.day,
+            year=expected_date.year
+        )
+        self.assertIn(date, response.content)
 
     @override_settings(FEATURES=FEATURES_WITH_CERTS_ENABLED)
     def test_render_html_view_invalid_certificate_configuration(self):

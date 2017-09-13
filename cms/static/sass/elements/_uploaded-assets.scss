@@ -36,17 +36,17 @@
       font-size: 80%;
       word-wrap: break-word;
 
-      th {
+      th, .video-head-col {
         @extend %t-copy-sub2;
         background-color: $gray-l5;
         padding: 0 ($baseline/2) ($baseline*0.75) ($baseline/2);
         vertical-align: middle;
         text-align: left;
-        color: $gray;
+        color: $gray-d2;
 
         .column-sort-link {
           cursor: pointer;
-          color: $blue;
+          color: $blue-d2;
         }
 
         .current-sort {
@@ -60,18 +60,18 @@
         }
       }
 
-      td {
+      td, .video-col {
         padding: ($baseline/2);
         vertical-align: middle;
         text-align: left;
       }
 
-      tbody {
+      tbody, .js-table-body {
         box-shadow: 0 2px 2px $shadow-l1;
         border: 1px solid $gray-l4;
         background: $white;
 
-        tr {
+        tr, .video-row {
           @include transition(all $tmg-f2 ease-in-out 0s);
           border-top: 1px solid $gray-l4;
 
@@ -106,12 +106,12 @@
           }
 
           &:hover {
-            background-color: $blue-l5;
+            background-color: $blue-l5 !important;
 
             .date-col,
             .embed-col,
             .embed-col .embeddable-xml-input {
-              color: $gray;
+              color: $gray-d1;
             }
           }
         }
@@ -141,13 +141,13 @@
         .date-col {
           @include transition(all $tmg-f2 ease-in-out 0s);
           @extend %t-copy-sub2;
-          color: $gray-l2;
+          color: $gray-d1;
         }
 
         .embed-col {
           @include transition(all $tmg-f2 ease-in-out 0s);
           padding-left: ($baseline*0.75);
-          color: $gray-l2;
+          color: $gray-d1;
 
           .embeddable-xml-input {
             @include transition(all $tmg-f2 ease-in-out 0s);
@@ -156,7 +156,7 @@
             border: 1px solid transparent;
             background: none;
             width: 100%;
-            color: $gray-l2;
+            color: $gray-d1;
 
             &:focus {
               background-color: $white;

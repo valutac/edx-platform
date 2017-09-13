@@ -20,16 +20,15 @@ class UserSerializer(serializers.HyperlinkedModelSerializer):
 
     def get_name(self, user):
         """
-        Return the name attribute from the user profile object
+        Return the name attribute from the user profile object if profile exists else none
         """
-        profile = UserProfile.objects.get(user=user)
-        return profile.name
+        return user.profile.name
 
     def get_preferences(self, user):
         """
         Returns the set of preferences as a dict for the specified user
         """
-        return dict([(pref.key, pref.value) for pref in user.preferences.all()])
+        return UserPreference.get_all_preferences(user)
 
     class Meta(object):
         model = User
@@ -40,13 +39,14 @@ class UserSerializer(serializers.HyperlinkedModelSerializer):
 
 class UserPreferenceSerializer(serializers.HyperlinkedModelSerializer):
     """
-    Serializer that generates a represenation of a UserPreference entity
+    Serializer that generates a representation of a UserPreference entity.
     """
     user = UserSerializer()
 
     class Meta(object):
         model = UserPreference
         depth = 1
+        fields = ('user', 'key', 'value', 'url')
 
 
 class RawUserPreferenceSerializer(serializers.ModelSerializer):
@@ -58,6 +58,7 @@ class RawUserPreferenceSerializer(serializers.ModelSerializer):
     class Meta(object):
         model = UserPreference
         depth = 1
+        fields = ('user', 'key', 'value', 'url')
 
 
 class ReadOnlyFieldsSerializerMixin(object):

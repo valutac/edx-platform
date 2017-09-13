@@ -1,37 +1,39 @@
 # -*- coding: utf-8 -*-
 """Video xmodule tests in mongo."""
 
-import ddt
 import json
 from collections import OrderedDict
-from path import Path as path
+from uuid import uuid4
 
-from lxml import etree
-from mock import patch, MagicMock, Mock
-from nose.plugins.attrib import attr
-
+import ddt
 from django.conf import settings
 from django.test import TestCase
 from django.test.utils import override_settings
+from edxval.api import ValCannotCreateError, ValVideoNotFoundError, create_profile, create_video, get_video_info
+from lxml import etree
+from mock import MagicMock, Mock, patch
+from nose.plugins.attrib import attr
+from path import Path as path
 
-from xmodule.video_module import VideoDescriptor, bumper_utils, video_utils, rewrite_video_url
-from xmodule.x_module import STUDENT_VIEW
-from xmodule.tests.test_video import VideoDescriptorTestBase, instantiate_descriptor
-from xmodule.tests.test_import import DummySystem
-from xmodule.video_module.transcripts_utils import save_to_store, Transcript
-from xmodule.modulestore.inheritance import own_metadata
 from xmodule.contentstore.content import StaticContent
 from xmodule.exceptions import NotFoundError
-from xmodule.modulestore.tests.django_utils import (
-    TEST_DATA_MONGO_MODULESTORE, TEST_DATA_SPLIT_MODULESTORE
-)
-from edxval.api import (
-    create_profile, create_video, get_video_info, ValCannotCreateError, ValVideoNotFoundError
-)
+from xmodule.modulestore import ModuleStoreEnum
+from xmodule.modulestore.inheritance import own_metadata
+from xmodule.modulestore.tests.django_utils import TEST_DATA_MONGO_MODULESTORE, TEST_DATA_SPLIT_MODULESTORE
+from xmodule.tests.test_import import DummySystem
+from xmodule.tests.test_video import VideoDescriptorTestBase, instantiate_descriptor
+from xmodule.video_module import VideoDescriptor, bumper_utils, rewrite_video_url, video_utils
+from xmodule.video_module.transcripts_utils import Transcript, save_to_store
+from xmodule.x_module import STUDENT_VIEW
 
-from . import BaseTestXmodule
-from .test_video_xml import SOURCE_XML
+from .helpers import BaseTestXmodule
 from .test_video_handlers import TestVideo
+from .test_video_xml import SOURCE_XML
+
+MODULESTORES = {
+    ModuleStoreEnum.Type.mongo: TEST_DATA_MONGO_MODULESTORE,
+    ModuleStoreEnum.Type.split: TEST_DATA_SPLIT_MODULESTORE,
+}
 
 
 @attr(shard=1)
@@ -54,35 +56,36 @@ class TestVideoYouTube(TestVideo):
             'handout': None,
             'id': self.item_descriptor.location.html_id(),
             'metadata': json.dumps(OrderedDict({
-                "saveStateUrl": self.item_descriptor.xmodule_runtime.ajax_url + "/save_user_state",
-                "autoplay": False,
-                "streams": "0.75:jNCf2gIqpeE,1.00:ZwkTiUPN0mg,1.25:rsq9auxASqI,1.50:kMyNdzVHHgg",
-                "sub": "a_sub_file.srt.sjson",
-                "sources": sources,
-                "captionDataDir": None,
-                "showCaptions": "true",
-                "generalSpeed": 1.0,
-                "speed": None,
-                "savedVideoPosition": 0.0,
-                "start": 3603.0,
-                "end": 3610.0,
-                "transcriptLanguage": "en",
-                "transcriptLanguages": OrderedDict({"en": "English", "uk": u"Українська"}),
-                "ytTestTimeout": 1500,
-                "ytApiUrl": "https://www.youtube.com/iframe_api",
-                "ytMetadataUrl": "https://www.googleapis.com/youtube/v3/videos/",
-                "ytKey": None,
-                "transcriptTranslationUrl": self.item_descriptor.xmodule_runtime.handler_url(
+                'saveStateUrl': self.item_descriptor.xmodule_runtime.ajax_url + '/save_user_state',
+                'autoplay': False,
+                'streams': '0.75:jNCf2gIqpeE,1.00:ZwkTiUPN0mg,1.25:rsq9auxASqI,1.50:kMyNdzVHHgg',
+                'sub': 'a_sub_file.srt.sjson',
+                'sources': sources,
+                'poster': None,
+                'captionDataDir': None,
+                'showCaptions': 'true',
+                'generalSpeed': 1.0,
+                'speed': None,
+                'savedVideoPosition': 0.0,
+                'start': 3603.0,
+                'end': 3610.0,
+                'transcriptLanguage': 'en',
+                'transcriptLanguages': OrderedDict({'en': 'English', 'uk': u'Українська'}),
+                'ytTestTimeout': 1500,
+                'ytApiUrl': 'https://www.youtube.com/iframe_api',
+                'ytMetadataUrl': 'https://www.googleapis.com/youtube/v3/videos/',
+                'ytKey': None,
+                'transcriptTranslationUrl': self.item_descriptor.xmodule_runtime.handler_url(
                     self.item_descriptor, 'transcript', 'translation/__lang__'
                 ).rstrip('/?'),
-                "transcriptAvailableTranslationsUrl": self.item_descriptor.xmodule_runtime.handler_url(
+                'transcriptAvailableTranslationsUrl': self.item_descriptor.xmodule_runtime.handler_url(
                     self.item_descriptor, 'transcript', 'available_translations'
                 ).rstrip('/?'),
-                "autohideHtml5": False,
-                "recordedYoutubeIsAvailable": True,
+                'autohideHtml5': False,
+                'recordedYoutubeIsAvailable': True,
             })),
             'track': None,
-            'transcript_download_format': 'srt',
+            'transcript_download_format': u'srt',
             'transcript_download_formats_list': [
                 {'display_name': 'SubRip (.srt) file', 'value': 'srt'},
                 {'display_name': 'Text (.txt) file', 'value': 'txt'}
@@ -133,35 +136,36 @@ class TestVideoNonYouTube(TestVideo):
             'handout': None,
             'id': self.item_descriptor.location.html_id(),
             'metadata': json.dumps(OrderedDict({
-                "saveStateUrl": self.item_descriptor.xmodule_runtime.ajax_url + "/save_user_state",
-                "autoplay": False,
-                "streams": "1.00:3_yD_cEKoCk",
-                "sub": "a_sub_file.srt.sjson",
-                "sources": sources,
-                "captionDataDir": None,
-                "showCaptions": "true",
-                "generalSpeed": 1.0,
-                "speed": None,
-                "savedVideoPosition": 0.0,
-                "start": 3603.0,
-                "end": 3610.0,
-                "transcriptLanguage": "en",
-                "transcriptLanguages": OrderedDict({"en": "English"}),
-                "ytTestTimeout": 1500,
-                "ytApiUrl": "https://www.youtube.com/iframe_api",
-                "ytMetadataUrl": "https://www.googleapis.com/youtube/v3/videos/",
-                "ytKey": None,
-                "transcriptTranslationUrl": self.item_descriptor.xmodule_runtime.handler_url(
+                'saveStateUrl': self.item_descriptor.xmodule_runtime.ajax_url + '/save_user_state',
+                'autoplay': False,
+                'streams': '1.00:3_yD_cEKoCk',
+                'sub': 'a_sub_file.srt.sjson',
+                'sources': sources,
+                'poster': None,
+                'captionDataDir': None,
+                'showCaptions': 'true',
+                'generalSpeed': 1.0,
+                'speed': None,
+                'savedVideoPosition': 0.0,
+                'start': 3603.0,
+                'end': 3610.0,
+                'transcriptLanguage': 'en',
+                'transcriptLanguages': OrderedDict({'en': 'English'}),
+                'ytTestTimeout': 1500,
+                'ytApiUrl': 'https://www.youtube.com/iframe_api',
+                'ytMetadataUrl': 'https://www.googleapis.com/youtube/v3/videos/',
+                'ytKey': None,
+                'transcriptTranslationUrl': self.item_descriptor.xmodule_runtime.handler_url(
                     self.item_descriptor, 'transcript', 'translation/__lang__'
                 ).rstrip('/?'),
-                "transcriptAvailableTranslationsUrl": self.item_descriptor.xmodule_runtime.handler_url(
+                'transcriptAvailableTranslationsUrl': self.item_descriptor.xmodule_runtime.handler_url(
                     self.item_descriptor, 'transcript', 'available_translations'
                 ).rstrip('/?'),
-                "autohideHtml5": False,
-                "recordedYoutubeIsAvailable": True,
+                'autohideHtml5': False,
+                'recordedYoutubeIsAvailable': True,
             })),
             'track': None,
-            'transcript_download_format': 'srt',
+            'transcript_download_format': u'srt',
             'transcript_download_formats_list': [
                 {'display_name': 'SubRip (.srt) file', 'value': 'srt'},
                 {'display_name': 'Text (.txt) file', 'value': 'txt'}
@@ -176,6 +180,7 @@ class TestVideoNonYouTube(TestVideo):
 
 
 @attr(shard=1)
+@ddt.ddt
 class TestGetHtmlMethod(BaseTestXmodule):
     '''
     Make sure that `get_html` works correctly.
@@ -188,32 +193,33 @@ class TestGetHtmlMethod(BaseTestXmodule):
         super(TestGetHtmlMethod, self).setUp()
         self.setup_course()
         self.default_metadata_dict = OrderedDict({
-            "saveStateUrl": "",
-            "autoplay": settings.FEATURES.get('AUTOPLAY_VIDEOS', True),
-            "streams": "1.00:3_yD_cEKoCk",
-            "sub": "a_sub_file.srt.sjson",
-            "sources": '[]',
-            "captionDataDir": None,
-            "showCaptions": "true",
-            "generalSpeed": 1.0,
-            "speed": None,
-            "savedVideoPosition": 0.0,
-            "start": 3603.0,
-            "end": 3610.0,
-            "transcriptLanguage": "en",
-            "transcriptLanguages": OrderedDict({"en": "English"}),
-            "ytTestTimeout": 1500,
-            "ytApiUrl": "https://www.youtube.com/iframe_api",
-            "ytMetadataUrl": "https://www.googleapis.com/youtube/v3/videos/",
-            "ytKey": None,
-            "transcriptTranslationUrl": self.item_descriptor.xmodule_runtime.handler_url(
+            'saveStateUrl': '',
+            'autoplay': settings.FEATURES.get('AUTOPLAY_VIDEOS', True),
+            'streams': '1.00:3_yD_cEKoCk',
+            'sub': 'a_sub_file.srt.sjson',
+            'sources': '[]',
+            'poster': None,
+            'captionDataDir': None,
+            'showCaptions': 'true',
+            'generalSpeed': 1.0,
+            'speed': None,
+            'savedVideoPosition': 0.0,
+            'start': 3603.0,
+            'end': 3610.0,
+            'transcriptLanguage': 'en',
+            'transcriptLanguages': OrderedDict({'en': 'English'}),
+            'ytTestTimeout': 1500,
+            'ytApiUrl': 'https://www.youtube.com/iframe_api',
+            'ytMetadataUrl': 'https://www.googleapis.com/youtube/v3/videos/',
+            'ytKey': None,
+            'transcriptTranslationUrl': self.item_descriptor.xmodule_runtime.handler_url(
                 self.item_descriptor, 'transcript', 'translation/__lang__'
             ).rstrip('/?'),
-            "transcriptAvailableTranslationsUrl": self.item_descriptor.xmodule_runtime.handler_url(
+            'transcriptAvailableTranslationsUrl': self.item_descriptor.xmodule_runtime.handler_url(
                 self.item_descriptor, 'transcript', 'available_translations'
             ).rstrip('/?'),
-            "autohideHtml5": False,
-            "recordedYoutubeIsAvailable": True,
+            'autohideHtml5': False,
+            'recordedYoutubeIsAvailable': True,
         })
 
     def test_get_html_track(self):
@@ -281,7 +287,7 @@ class TestGetHtmlMethod(BaseTestXmodule):
             'id': self.item_descriptor.location.html_id(),
             'metadata': '',
             'track': None,
-            'transcript_download_format': 'srt',
+            'transcript_download_format': u'srt',
             'transcript_download_formats_list': [
                 {'display_name': 'SubRip (.srt) file', 'value': 'srt'},
                 {'display_name': 'Text (.txt) file', 'value': 'txt'}
@@ -319,7 +325,7 @@ class TestGetHtmlMethod(BaseTestXmodule):
             })
             expected_context.update({
                 'transcript_download_format': (
-                    None if self.item_descriptor.track and self.item_descriptor.download_track else 'srt'
+                    None if self.item_descriptor.track and self.item_descriptor.download_track else u'srt'
                 ),
                 'track': (
                     track_url if data['expected_track_url'] == u'a_sub_file.srt.sjson' else data['expected_track_url']
@@ -403,7 +409,7 @@ class TestGetHtmlMethod(BaseTestXmodule):
             'id': self.item_descriptor.location.html_id(),
             'metadata': self.default_metadata_dict,
             'track': None,
-            'transcript_download_format': 'srt',
+            'transcript_download_format': u'srt',
             'transcript_download_formats_list': [
                 {'display_name': 'SubRip (.srt) file', 'value': 'srt'},
                 {'display_name': 'Text (.txt) file', 'value': 'txt'}
@@ -526,7 +532,7 @@ class TestGetHtmlMethod(BaseTestXmodule):
             'handout': None,
             'id': self.item_descriptor.location.html_id(),
             'track': None,
-            'transcript_download_format': 'srt',
+            'transcript_download_format': u'srt',
             'transcript_download_formats_list': [
                 {'display_name': 'SubRip (.srt) file', 'value': 'srt'},
                 {'display_name': 'Text (.txt) file', 'value': 'txt'}
@@ -700,7 +706,7 @@ class TestGetHtmlMethod(BaseTestXmodule):
             'handout': None,
             'id': self.item_descriptor.location.html_id(),
             'track': None,
-            'transcript_download_format': 'srt',
+            'transcript_download_format': u'srt',
             'transcript_download_formats_list': [
                 {'display_name': 'SubRip (.srt) file', 'value': 'srt'},
                 {'display_name': 'Text (.txt) file', 'value': 'txt'}
@@ -814,7 +820,7 @@ class TestGetHtmlMethod(BaseTestXmodule):
             'id': None,
             'metadata': self.default_metadata_dict,
             'track': None,
-            'transcript_download_format': 'srt',
+            'transcript_download_format': u'srt',
             'transcript_download_formats_list': [
                 {'display_name': 'SubRip (.srt) file', 'value': 'srt'},
                 {'display_name': 'Text (.txt) file', 'value': 'txt'}
@@ -853,6 +859,99 @@ class TestGetHtmlMethod(BaseTestXmodule):
                 context,
                 self.item_descriptor.xmodule_runtime.render_template('video.html', expected_context)
             )
+
+    @ddt.data(
+        (True, ['youtube', 'desktop_webm', 'desktop_mp4', 'hls']),
+        (False, ['youtube', 'desktop_webm', 'desktop_mp4'])
+    )
+    @ddt.unpack
+    def test_get_html_on_toggling_hls_feature(self, hls_feature_enabled, expected_val_profiles):
+        """
+        Verify val profiles on toggling HLS Playback feature.
+        """
+        with patch('xmodule.video_module.video_module.edxval_api.get_urls_for_profiles') as get_urls_for_profiles:
+            get_urls_for_profiles.return_value = {
+                'desktop_webm': 'https://webm.com/dw.webm',
+                'hls': 'https://hls.com/hls.m3u8',
+                'youtube': 'https://yt.com/?v=v0TFmdO4ZP0',
+                'desktop_mp4': 'https://mp4.com/dm.mp4'
+            }
+            with patch('xmodule.video_module.video_module.HLSPlaybackEnabledFlag.feature_enabled') as feature_enabled:
+                feature_enabled.return_value = hls_feature_enabled
+                video_xml = '<video display_name="Video" download_video="true" edx_video_id="12345-67890">[]</video>'
+                self.initialize_module(data=video_xml)
+                self.item_descriptor.render(STUDENT_VIEW)
+                get_urls_for_profiles.assert_called_with(
+                    self.item_descriptor.edx_video_id,
+                    expected_val_profiles,
+                )
+
+    @patch('xmodule.video_module.video_module.HLSPlaybackEnabledFlag.feature_enabled', Mock(return_value=True))
+    @patch('xmodule.video_module.video_module.edxval_api.get_urls_for_profiles')
+    def test_get_html_hls(self, get_urls_for_profiles):
+        """
+        Verify that hls profile functionality works as expected.
+
+        * HLS source should be added into list of available sources
+        * HLS source should not be used for download URL If available from edxval
+        """
+        video_xml = '<video display_name="Video" download_video="true" edx_video_id="12345-67890">[]</video>'
+
+        get_urls_for_profiles.return_value = {
+            'desktop_webm': 'https://webm.com/dw.webm',
+            'hls': 'https://hls.com/hls.m3u8',
+            'youtube': 'https://yt.com/?v=v0TFmdO4ZP0',
+            'desktop_mp4': 'https://mp4.com/dm.mp4'
+        }
+
+        self.initialize_module(data=video_xml)
+        context = self.item_descriptor.render(STUDENT_VIEW).content
+
+        self.assertIn("'download_video_link': 'https://mp4.com/dm.mp4'", context)
+        self.assertIn('"streams": "1.00:https://yt.com/?v=v0TFmdO4ZP0"', context)
+        self.assertIn(
+            '"sources": ["https://webm.com/dw.webm", "https://mp4.com/dm.mp4", "https://hls.com/hls.m3u8"]', context
+        )
+
+    def test_get_html_hls_no_video_id(self):
+        """
+        Verify that `download_video_link` is set to None for HLS videos if no video id
+        """
+        video_xml = """
+        <video display_name="Video" download_video="true" source="https://hls.com/hls.m3u8">
+        ["https://hls.com/hls2.m3u8", "https://hls.com/hls3.m3u8"]
+        </video>
+        """
+
+        self.initialize_module(data=video_xml)
+        context = self.item_descriptor.render(STUDENT_VIEW).content
+        self.assertIn("'download_video_link': None", context)
+
+    @patch('xmodule.video_module.video_module.edxval_api.get_course_video_image_url')
+    def test_poster_image(self, get_course_video_image_url):
+        """
+        Verify that poster image functionality works as expected.
+        """
+        video_xml = '<video display_name="Video" download_video="true" edx_video_id="12345-67890">[]</video>'
+        get_course_video_image_url.return_value = '/media/video-images/poster.png'
+
+        self.initialize_module(data=video_xml)
+        context = self.item_descriptor.render(STUDENT_VIEW).content
+
+        self.assertIn('"poster": "/media/video-images/poster.png"', context)
+
+    @patch('xmodule.video_module.video_module.edxval_api.get_course_video_image_url')
+    def test_poster_image_without_edx_video_id(self, get_course_video_image_url):
+        """
+        Verify that poster image is set to None and there is no crash when no edx_video_id.
+        """
+        video_xml = '<video display_name="Video" download_video="true" edx_video_id="null">[]</video>'
+        get_course_video_image_url.return_value = '/media/video-images/poster.png'
+
+        self.initialize_module(data=video_xml)
+        context = self.item_descriptor.render(STUDENT_VIEW).content
+
+        self.assertIn("\'poster\': \'null\'", context)
 
 
 @attr(shard=1)
@@ -913,6 +1012,7 @@ class TestVideoCDNRewriting(BaseTestXmodule):
 
 
 @attr(shard=1)
+@ddt.ddt
 class TestVideoDescriptorInitialization(BaseTestXmodule):
     """
     Make sure that module initialization works correctly.
@@ -982,6 +1082,93 @@ class TestVideoDescriptorInitialization(BaseTestXmodule):
         self.assertNotIn('source', fields)
         self.assertFalse(self.item_descriptor.download_video)
 
+    @ddt.data(
+        (
+            {
+                'youtube': 'v0TFmdO4ZP0',
+                'hls': 'https://hls.com/hls.m3u8',
+                'desktop_mp4': 'https://mp4.com/dm.mp4',
+                'desktop_webm': 'https://webm.com/dw.webm',
+            },
+            ['https://www.youtube.com/watch?v=v0TFmdO4ZP0']
+        ),
+        (
+            {
+                'youtube': None,
+                'hls': 'https://hls.com/hls.m3u8',
+                'desktop_mp4': 'https://mp4.com/dm.mp4',
+                'desktop_webm': 'https://webm.com/dw.webm',
+            },
+            ['https://www.youtube.com/watch?v=3_yD_cEKoCk']
+        ),
+        (
+            {
+                'youtube': None,
+                'hls': None,
+                'desktop_mp4': None,
+                'desktop_webm': None,
+            },
+            ['https://www.youtube.com/watch?v=3_yD_cEKoCk']
+        ),
+    )
+    @ddt.unpack
+    @patch('xmodule.video_module.video_module.HLSPlaybackEnabledFlag.feature_enabled', Mock(return_value=True))
+    def test_val_encoding_in_context(self, val_video_encodings, video_url):
+        """
+        Tests that the val encodings correctly override the video url when the edx video id is set and
+        one or more encodings are present.
+        Accepted order of source priority is:
+            VAL's youtube source > external youtube source > hls > mp4 > webm.
+
+        Note that `https://www.youtube.com/watch?v=3_yD_cEKoCk` is the default youtube source with which
+        a video component is initialized. Current implementation considers this youtube source as a valid
+        external youtube source.
+        """
+        with patch('xmodule.video_module.video_module.edxval_api.get_urls_for_profiles') as get_urls_for_profiles:
+            get_urls_for_profiles.return_value = val_video_encodings
+            self.initialize_module(
+                data='<video display_name="Video" download_video="true" edx_video_id="12345-67890">[]</video>'
+            )
+            context = self.item_descriptor.get_context()
+        self.assertEqual(context['transcripts_basic_tab_metadata']['video_url']['value'], video_url)
+
+    @ddt.data(
+        (
+            {
+                'youtube': None,
+                'hls': 'https://hls.com/hls.m3u8',
+                'desktop_mp4': 'https://mp4.com/dm.mp4',
+                'desktop_webm': 'https://webm.com/dw.webm',
+            },
+            ['https://hls.com/hls.m3u8']
+        ),
+        (
+            {
+                'youtube': 'v0TFmdO4ZP0',
+                'hls': 'https://hls.com/hls.m3u8',
+                'desktop_mp4': None,
+                'desktop_webm': 'https://webm.com/dw.webm',
+            },
+            ['https://www.youtube.com/watch?v=v0TFmdO4ZP0']
+        ),
+    )
+    @ddt.unpack
+    @patch('xmodule.video_module.video_module.HLSPlaybackEnabledFlag.feature_enabled', Mock(return_value=True))
+    def test_val_encoding_in_context_without_external_youtube_source(self, val_video_encodings, video_url):
+        """
+        Tests that the val encodings correctly override the video url when the edx video id is set and
+        one or more encodings are present. In this scenerio no external youtube source is provided.
+        Accepted order of source priority is:
+            VAL's youtube source > external youtube source > hls > mp4 > webm.
+        """
+        with patch('xmodule.video_module.video_module.edxval_api.get_urls_for_profiles') as get_urls_for_profiles:
+            get_urls_for_profiles.return_value = val_video_encodings
+            self.initialize_module(
+                data='<video display_name="Video" youtube_id_1_0="" download_video="true" edx_video_id="12345-67890">[]</video>'
+            )
+            context = self.item_descriptor.get_context()
+        self.assertEqual(context['transcripts_basic_tab_metadata']['video_url']['value'], video_url)
+
 
 @attr(shard=1)
 @ddt.ddt
@@ -1006,14 +1193,14 @@ class TestEditorSavedMethod(BaseTestXmodule):
         self.test_dir = path(__file__).abspath().dirname().dirname().dirname().dirname().dirname()
         self.file_path = self.test_dir + '/common/test/data/uploads/' + self.file_name
 
-    @ddt.data(TEST_DATA_MONGO_MODULESTORE, TEST_DATA_SPLIT_MODULESTORE)
+    @ddt.data(ModuleStoreEnum.Type.mongo, ModuleStoreEnum.Type.split)
     def test_editor_saved_when_html5_sub_not_exist(self, default_store):
         """
         When there is youtube_sub exist but no html5_sub present for
         html5_sources, editor_saved function will generate new html5_sub
         for video.
         """
-        self.MODULESTORE = default_store  # pylint: disable=invalid-name
+        self.MODULESTORE = MODULESTORES[default_store]  # pylint: disable=invalid-name
         self.initialize_module(metadata=self.metadata)
         item = self.store.get_item(self.item_descriptor.location)
         with open(self.file_path, "r") as myfile:
@@ -1028,13 +1215,13 @@ class TestEditorSavedMethod(BaseTestXmodule):
         self.assertIsInstance(Transcript.get_asset(item.location, 'subs_3_yD_cEKoCk.srt.sjson'), StaticContent)
         self.assertIsInstance(Transcript.get_asset(item.location, 'subs_video.srt.sjson'), StaticContent)
 
-    @ddt.data(TEST_DATA_MONGO_MODULESTORE, TEST_DATA_SPLIT_MODULESTORE)
+    @ddt.data(ModuleStoreEnum.Type.mongo, ModuleStoreEnum.Type.split)
     def test_editor_saved_when_youtube_and_html5_subs_exist(self, default_store):
         """
         When both youtube_sub and html5_sub already exist then no new
         sub will be generated by editor_saved function.
         """
-        self.MODULESTORE = default_store
+        self.MODULESTORE = MODULESTORES[default_store]
         self.initialize_module(metadata=self.metadata)
         item = self.store.get_item(self.item_descriptor.location)
         with open(self.file_path, "r") as myfile:
@@ -1048,6 +1235,45 @@ class TestEditorSavedMethod(BaseTestXmodule):
         with patch('xmodule.video_module.video_module.manage_video_subtitles_save') as manage_video_subtitles_save:
             item.editor_saved(self.user, old_metadata, None)
             self.assertFalse(manage_video_subtitles_save.called)
+
+    @ddt.data(ModuleStoreEnum.Type.mongo, ModuleStoreEnum.Type.split)
+    def test_editor_saved_with_unstripped_video_id(self, default_store):
+        """
+        Verify editor saved when video id contains spaces/tabs.
+        """
+        self.MODULESTORE = MODULESTORES[default_store]
+        stripped_video_id = unicode(uuid4())
+        unstripped_video_id = u'{video_id}{tabs}'.format(video_id=stripped_video_id, tabs=u'\t\t\t')
+        self.metadata.update({
+            'edx_video_id': unstripped_video_id
+        })
+        self.initialize_module(metadata=self.metadata)
+        item = self.store.get_item(self.item_descriptor.location)
+        self.assertEqual(item.edx_video_id, unstripped_video_id)
+
+        # Now, modifying and saving the video module should strip the video id.
+        old_metadata = own_metadata(item)
+        item.display_name = u'New display name'
+        item.editor_saved(self.user, old_metadata, None)
+        self.assertEqual(item.edx_video_id, stripped_video_id)
+
+    @ddt.data(ModuleStoreEnum.Type.mongo, ModuleStoreEnum.Type.split)
+    @patch('xmodule.video_module.video_module.edxval_api.get_url_for_profile', Mock(return_value='test_yt_id'))
+    def test_editor_saved_with_yt_val_profile(self, default_store):
+        """
+        Verify editor saved overrides `youtube_id_1_0` when a youtube val profile is there
+        for a given `edx_video_id`.
+        """
+        self.MODULESTORE = MODULESTORES[default_store]
+        self.initialize_module(metadata=self.metadata)
+        item = self.store.get_item(self.item_descriptor.location)
+        self.assertEqual(item.youtube_id_1_0, '3_yD_cEKoCk')
+
+        # Now, modify `edx_video_id` and save should override `youtube_id_1_0`.
+        old_metadata = own_metadata(item)
+        item.edx_video_id = unicode(uuid4())
+        item.editor_saved(self.user, old_metadata, None)
+        self.assertEqual(item.youtube_id_1_0, 'test_yt_id')
 
 
 @ddt.ddt
@@ -1095,7 +1321,7 @@ class TestVideoDescriptorStudentViewJson(TestCase):
             'duration': self.TEST_DURATION,
             'status': 'dummy',
             'encoded_videos': [self.TEST_ENCODED_VIDEO],
-            'courses': [self.video.location.course_key] if associate_course_in_val else [],
+            'courses': [unicode(self.video.location.course_key)] if associate_course_in_val else [],
         })
         self.val_video = get_video_info(self.TEST_EDX_VIDEO_ID)  # pylint: disable=attribute-defined-outside-init
 
@@ -1225,6 +1451,7 @@ class VideoDescriptorTest(TestCase, VideoDescriptorTestBase):
     def setUp(self):
         super(VideoDescriptorTest, self).setUp()
         self.descriptor.runtime.handler_url = MagicMock()
+        self.descriptor.runtime.course_id = MagicMock()
 
     def test_get_context(self):
         """"
@@ -1247,6 +1474,12 @@ class VideoDescriptorTest(TestCase, VideoDescriptorTestBase):
         rendered_context = self.descriptor.get_context()
         self.assertListEqual(rendered_context['tabs'], correct_tabs)
 
+        # Assert that the Video ID field is present in basic tab metadata context.
+        self.assertEqual(
+            rendered_context['transcripts_basic_tab_metadata']['edx_video_id'],
+            self.descriptor.editable_metadata_fields['edx_video_id']
+        )
+
     def test_export_val_data(self):
         self.descriptor.edx_video_id = 'test_edx_video_id'
         create_profile('mobile')
@@ -1266,7 +1499,7 @@ class VideoDescriptorTest(TestCase, VideoDescriptorTestBase):
         actual = self.descriptor.definition_to_xml(resource_fs=None)
         expected_str = """
             <video download_video="false" url_name="SampleProblem">
-                <video_asset client_video_id="test_client_video_id" duration="111.0">
+                <video_asset client_video_id="test_client_video_id" duration="111.0" image="">
                     <encoded_video profile="mobile" url="http://example.com/video" file_size="222" bitrate="333"/>
                 </video_asset>
             </video>
@@ -1302,7 +1535,7 @@ class VideoDescriptorTest(TestCase, VideoDescriptorTestBase):
         self.assertEqual(video_data['client_video_id'], 'test_client_video_id')
         self.assertEqual(video_data['duration'], 111)
         self.assertEqual(video_data['status'], 'imported')
-        self.assertEqual(video_data['courses'], [id_generator.target_course_id])
+        self.assertEqual(video_data['courses'], [{id_generator.target_course_id: None}])
         self.assertEqual(video_data['encoded_videos'][0]['profile'], 'mobile')
         self.assertEqual(video_data['encoded_videos'][0]['url'], 'http://example.com/video')
         self.assertEqual(video_data['encoded_videos'][0]['file_size'], 222)
@@ -1366,13 +1599,13 @@ class TestVideoWithBumper(TestVideo):
         Test content with rendered bumper metadata.
         """
         get_url_for_profiles.return_value = {
-            "desktop_mp4": "http://test_bumper.mp4",
-            "desktop_webm": "",
+            'desktop_mp4': 'http://test_bumper.mp4',
+            'desktop_webm': '',
         }
 
         get_bumper_settings.return_value = {
-            "video_id": "edx_video_id",
-            "transcripts": {},
+            'video_id': 'edx_video_id',
+            'transcripts': {},
         }
 
         is_bumper_enabled.return_value = True
@@ -1384,17 +1617,17 @@ class TestVideoWithBumper(TestVideo):
             'license': None,
             'bumper_metadata': json.dumps(OrderedDict({
                 'saveStateUrl': self.item_descriptor.xmodule_runtime.ajax_url + '/save_user_state',
-                "showCaptions": "true",
-                "sources": ["http://test_bumper.mp4"],
+                'showCaptions': 'true',
+                'sources': ['http://test_bumper.mp4'],
                 'streams': '',
-                "transcriptLanguage": "en",
-                "transcriptLanguages": {"en": "English"},
-                "transcriptTranslationUrl": video_utils.set_query_parameter(
+                'transcriptLanguage': 'en',
+                'transcriptLanguages': {'en': 'English'},
+                'transcriptTranslationUrl': video_utils.set_query_parameter(
                     self.item_descriptor.xmodule_runtime.handler_url(
                         self.item_descriptor, 'transcript', 'translation/__lang__'
                     ).rstrip('/?'), 'is_bumper', 1
                 ),
-                "transcriptAvailableTranslationsUrl": video_utils.set_query_parameter(
+                'transcriptAvailableTranslationsUrl': video_utils.set_query_parameter(
                     self.item_descriptor.xmodule_runtime.handler_url(
                         self.item_descriptor, 'transcript', 'available_translations'
                     ).rstrip('/?'), 'is_bumper', 1
@@ -1407,42 +1640,43 @@ class TestVideoWithBumper(TestVideo):
             'handout': None,
             'id': self.item_descriptor.location.html_id(),
             'metadata': json.dumps(OrderedDict({
-                "saveStateUrl": self.item_descriptor.xmodule_runtime.ajax_url + "/save_user_state",
-                "autoplay": False,
-                "streams": "0.75:jNCf2gIqpeE,1.00:ZwkTiUPN0mg,1.25:rsq9auxASqI,1.50:kMyNdzVHHgg",
-                "sub": "a_sub_file.srt.sjson",
-                "sources": sources,
-                "captionDataDir": None,
-                "showCaptions": "true",
-                "generalSpeed": 1.0,
-                "speed": None,
-                "savedVideoPosition": 0.0,
-                "start": 3603.0,
-                "end": 3610.0,
-                "transcriptLanguage": "en",
-                "transcriptLanguages": OrderedDict({"en": "English", "uk": u"Українська"}),
-                "ytTestTimeout": 1500,
-                "ytApiUrl": "https://www.youtube.com/iframe_api",
-                "ytMetadataUrl": "https://www.googleapis.com/youtube/v3/videos/",
-                "ytKey": None,
-                "transcriptTranslationUrl": self.item_descriptor.xmodule_runtime.handler_url(
+                'saveStateUrl': self.item_descriptor.xmodule_runtime.ajax_url + '/save_user_state',
+                'autoplay': False,
+                'streams': '0.75:jNCf2gIqpeE,1.00:ZwkTiUPN0mg,1.25:rsq9auxASqI,1.50:kMyNdzVHHgg',
+                'sub': 'a_sub_file.srt.sjson',
+                'sources': sources,
+                'poster': None,
+                'captionDataDir': None,
+                'showCaptions': 'true',
+                'generalSpeed': 1.0,
+                'speed': None,
+                'savedVideoPosition': 0.0,
+                'start': 3603.0,
+                'end': 3610.0,
+                'transcriptLanguage': 'en',
+                'transcriptLanguages': OrderedDict({'en': 'English', 'uk': u'Українська'}),
+                'ytTestTimeout': 1500,
+                'ytApiUrl': 'https://www.youtube.com/iframe_api',
+                'ytMetadataUrl': 'https://www.googleapis.com/youtube/v3/videos/',
+                'ytKey': None,
+                'transcriptTranslationUrl': self.item_descriptor.xmodule_runtime.handler_url(
                     self.item_descriptor, 'transcript', 'translation/__lang__'
                 ).rstrip('/?'),
-                "transcriptAvailableTranslationsUrl": self.item_descriptor.xmodule_runtime.handler_url(
+                'transcriptAvailableTranslationsUrl': self.item_descriptor.xmodule_runtime.handler_url(
                     self.item_descriptor, 'transcript', 'available_translations'
                 ).rstrip('/?'),
-                "autohideHtml5": False,
-                "recordedYoutubeIsAvailable": True,
+                'autohideHtml5': False,
+                'recordedYoutubeIsAvailable': True,
             })),
             'track': None,
-            'transcript_download_format': 'srt',
+            'transcript_download_format': u'srt',
             'transcript_download_formats_list': [
                 {'display_name': 'SubRip (.srt) file', 'value': 'srt'},
                 {'display_name': 'Text (.txt) file', 'value': 'txt'}
             ],
             'poster': json.dumps(OrderedDict({
-                "url": "http://img.youtube.com/vi/ZwkTiUPN0mg/0.jpg",
-                "type": "youtube"
+                'url': 'http://img.youtube.com/vi/ZwkTiUPN0mg/0.jpg',
+                'type': 'youtube'
             }))
         }
 

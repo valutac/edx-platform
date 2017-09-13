@@ -1,20 +1,27 @@
 """Provides factories for student models."""
 import random
+from datetime import datetime
+from uuid import uuid4
 
-from student.models import (User, UserProfile, Registration,
-                            CourseEnrollmentAllowed, CourseEnrollment,
-                            PendingEmailChange, UserStanding,
-                            CourseAccessRole)
-from course_modes.models import CourseMode
+import factory
 from django.contrib.auth.models import AnonymousUser, Group, Permission
 from django.contrib.contenttypes.models import ContentType
-from datetime import datetime
-import factory
 from factory import lazy_attribute
 from factory.django import DjangoModelFactory
-from uuid import uuid4
+from opaque_keys.edx.keys import CourseKey
 from pytz import UTC
-from opaque_keys.edx.locations import SlashSeparatedCourseKey
+
+from course_modes.models import CourseMode
+from student.models import (
+    CourseAccessRole,
+    CourseEnrollment,
+    CourseEnrollmentAllowed,
+    PendingEmailChange,
+    Registration,
+    User,
+    UserProfile,
+    UserStanding
+)
 
 # Factories are self documenting
 # pylint: disable=missing-docstring
@@ -53,24 +60,6 @@ class UserProfileFactory(DjangoModelFactory):
     allow_certificate = True
 
 
-class CourseModeFactory(DjangoModelFactory):
-    class Meta(object):
-        model = CourseMode
-
-    course_id = None
-    mode_display_name = CourseMode.DEFAULT_MODE.name
-    mode_slug = CourseMode.DEFAULT_MODE_SLUG
-    suggested_prices = ''
-    currency = 'usd'
-    expiration_datetime = None
-
-    @lazy_attribute
-    def min_price(self):
-        if CourseMode.is_verified_slug(self.mode_slug):
-            return random.randint(1, 100)
-        return 0
-
-
 class RegistrationFactory(DjangoModelFactory):
     class Meta(object):
         model = Registration
@@ -84,9 +73,11 @@ class UserFactory(DjangoModelFactory):
         model = User
         django_get_or_create = ('email', 'username')
 
+    _DEFAULT_PASSWORD = 'test'
+
     username = factory.Sequence(u'robot{0}'.format)
     email = factory.Sequence(u'robot+test+{0}@edx.org'.format)
-    password = factory.PostGenerationMethodCall('set_password', 'test')
+    password = factory.PostGenerationMethodCall('set_password', _DEFAULT_PASSWORD)
     first_name = factory.Sequence(u'Robot{0}'.format)
     last_name = 'Test'
     is_staff = False
@@ -135,7 +126,9 @@ class CourseEnrollmentFactory(DjangoModelFactory):
         model = CourseEnrollment
 
     user = factory.SubFactory(UserFactory)
-    course_id = SlashSeparatedCourseKey('edX', 'toy', '2012_Fall')
+    course = factory.SubFactory(
+        'openedx.core.djangoapps.content.course_overviews.tests.factories.CourseOverviewFactory',
+    )
 
 
 class CourseAccessRoleFactory(DjangoModelFactory):
@@ -143,7 +136,7 @@ class CourseAccessRoleFactory(DjangoModelFactory):
         model = CourseAccessRole
 
     user = factory.SubFactory(UserFactory)
-    course_id = SlashSeparatedCourseKey('edX', 'toy', '2012_Fall')
+    course_id = CourseKey.from_string('edX/toy/2012_Fall')
     role = 'TestRole'
 
 
@@ -152,7 +145,7 @@ class CourseEnrollmentAllowedFactory(DjangoModelFactory):
         model = CourseEnrollmentAllowed
 
     email = 'test@edx.org'
-    course_id = SlashSeparatedCourseKey('edX', 'toy', '2012_Fall')
+    course_id = CourseKey.from_string('edX/toy/2012_Fall')
 
 
 class PendingEmailChangeFactory(DjangoModelFactory):

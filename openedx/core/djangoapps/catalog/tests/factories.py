@@ -1,12 +1,21 @@
 """Factories for generating fake catalog data."""
 # pylint: disable=missing-docstring, invalid-name
-from random import randint
+from functools import partial
 
 import factory
+import uuid
 from faker import Faker
 
 
 fake = Faker()
+
+
+def generate_instances(factory_class, count=3):
+    """
+    Use this to populate fields with values derived from other factories. If
+    the array is used directly, the same value will be used repeatedly.
+    """
+    return factory_class.create_batch(count)
 
 
 def generate_course_key():
@@ -26,17 +35,34 @@ def generate_zulu_datetime():
     return fake.date_time().isoformat() + 'Z'
 
 
-class DictFactory(factory.Factory):
+def generate_price_ranges():
+    return [{
+        'currency': 'USD',
+        'max': 1000,
+        'min': 100,
+        'total': 500
+    }]
+
+
+def generate_seat_sku():
+    return uuid.uuid4().hex[:7].upper()
+
+
+class DictFactoryBase(factory.Factory):
+    """
+    Subclass this to make factories that can be used to produce fake API response
+    bodies for testing.
+    """
     class Meta(object):
         model = dict
 
 
-class ImageFactory(DictFactory):
+class ImageFactoryBase(DictFactoryBase):
     height = factory.Faker('random_int')
     width = factory.Faker('random_int')
 
 
-class Image(ImageFactory):
+class ImageFactory(ImageFactoryBase):
     """
     For constructing dicts mirroring the catalog's serialized representation of ImageFields.
 
@@ -46,7 +72,7 @@ class Image(ImageFactory):
     src = factory.Faker('image_url')
 
 
-class StdImage(ImageFactory):
+class StdImageFactory(ImageFactoryBase):
     """
     For constructing dicts mirroring the catalog's serialized representation of StdImageFields.
 
@@ -57,54 +83,105 @@ class StdImage(ImageFactory):
 
 def generate_sized_stdimage():
     return {
-        size: StdImage() for size in ['large', 'medium', 'small', 'x-small']
+        size: StdImageFactory() for size in ['large', 'medium', 'small', 'x-small']
     }
 
 
-class Organization(DictFactory):
+class OrganizationFactory(DictFactoryBase):
     key = factory.Faker('word')
     name = factory.Faker('company')
     uuid = factory.Faker('uuid4')
+    logo_image_url = factory.Faker('image_url')
 
 
-class CourseRun(DictFactory):
+class SeatFactory(DictFactoryBase):
+    currency = 'USD'
+    price = factory.Faker('random_int')
+    sku = factory.LazyFunction(generate_seat_sku)
+    type = 'verified'
+    upgrade_deadline = factory.LazyFunction(generate_zulu_datetime)
+
+
+class CourseRunFactory(DictFactoryBase):
+    eligible_for_financial_aid = True
     end = factory.LazyFunction(generate_zulu_datetime)
     enrollment_end = factory.LazyFunction(generate_zulu_datetime)
     enrollment_start = factory.LazyFunction(generate_zulu_datetime)
-    image = Image()
+    image = ImageFactory()
     key = factory.LazyFunction(generate_course_run_key)
     marketing_url = factory.Faker('url')
     pacing_type = 'self_paced'
+    seats = factory.LazyFunction(partial(generate_instances, SeatFactory))
     short_description = factory.Faker('sentence')
     start = factory.LazyFunction(generate_zulu_datetime)
+    status = 'published'
     title = factory.Faker('catch_phrase')
     type = 'verified'
     uuid = factory.Faker('uuid4')
 
 
-class Course(DictFactory):
-    course_runs = [CourseRun() for __ in range(randint(3, 5))]
-    image = Image()
+class CourseFactory(DictFactoryBase):
+    course_runs = factory.LazyFunction(partial(generate_instances, CourseRunFactory))
+    image = ImageFactory()
     key = factory.LazyFunction(generate_course_key)
-    owners = [Organization()]
+    owners = factory.LazyFunction(partial(generate_instances, OrganizationFactory, count=1))
     title = factory.Faker('catch_phrase')
     uuid = factory.Faker('uuid4')
 
 
-class Program(DictFactory):
-    authoring_organizations = [Organization()]
+class JobOutlookItemFactory(DictFactoryBase):
+    value = factory.Faker('sentence')
+
+
+class PersonFactory(DictFactoryBase):
+    bio = factory.Faker('paragraphs')
+    given_name = factory.Faker('first_name')
+    family_name = factory.Faker('last_name')
+    profile_image_url = factory.Faker('image_url')
+    uuid = factory.Faker('uuid4')
+
+
+class EndorserFactory(DictFactoryBase):
+    person = PersonFactory()
+    quote = factory.Faker('sentence')
+
+
+class ExpectedLearningItemFactory(DictFactoryBase):
+    value = factory.Faker('sentence')
+
+
+class FAQFactory(DictFactoryBase):
+    answer = factory.Faker('sentence')
+    question = factory.Faker('sentence')
+
+
+class ProgramFactory(DictFactoryBase):
+    authoring_organizations = factory.LazyFunction(partial(generate_instances, OrganizationFactory, count=1))
+    applicable_seat_types = []
     banner_image = factory.LazyFunction(generate_sized_stdimage)
     card_image_url = factory.Faker('image_url')
-    courses = [Course() for __ in range(randint(3, 5))]
+    courses = factory.LazyFunction(partial(generate_instances, CourseFactory))
+    expected_learning_items = factory.LazyFunction(partial(generate_instances, CourseFactory))
+    faq = factory.LazyFunction(partial(generate_instances, FAQFactory))
+    hidden = False
+    individual_endorsements = factory.LazyFunction(partial(generate_instances, EndorserFactory))
+    is_program_eligible_for_one_click_purchase = True
+    job_outlook_items = factory.LazyFunction(partial(generate_instances, JobOutlookItemFactory))
     marketing_slug = factory.Faker('slug')
     marketing_url = factory.Faker('url')
+    max_hours_effort_per_week = fake.random_int(21, 28)
+    min_hours_effort_per_week = fake.random_int(7, 14)
+    overview = factory.Faker('sentence')
+    price_ranges = factory.LazyFunction(generate_price_ranges)
+    staff = factory.LazyFunction(partial(generate_instances, PersonFactory))
     status = 'active'
     subtitle = factory.Faker('sentence')
     title = factory.Faker('catch_phrase')
     type = factory.Faker('word')
     uuid = factory.Faker('uuid4')
+    weeks_to_complete = fake.random_int(1, 45)
 
 
-class ProgramType(DictFactory):
+class ProgramTypeFactory(DictFactoryBase):
     name = factory.Faker('word')
     logo_image = factory.LazyFunction(generate_sized_stdimage)

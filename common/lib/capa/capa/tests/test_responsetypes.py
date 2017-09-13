@@ -1670,7 +1670,7 @@ class NumericalResponseTest(ResponseTest):  # pylint: disable=missing-docstring
 
         errors = [  # (exception raised, message to student)
             (calc.UndefinedVariable("x"), r"You may not use variables \(x\) in numerical problems"),
-            (ValueError("factorial() mess-up"), "factorial function evaluated outside its domain"),
+            (ValueError("factorial() mess-up"), "Factorial function evaluated outside its domain"),
             (ValueError(), "Could not interpret '.*' as a number"),
             (pyparsing.ParseException("oopsie"), "Invalid math syntax"),
             (ZeroDivisionError(), "Could not interpret '.*' as a number")

@@ -3,6 +3,7 @@
 Unit tests for behavior that is specific to the api methods (vs. the view methods).
 Most of the functionality is covered in test_views.py.
 """
+
 import re
 import ddt
 from dateutil.parser import parse as parse_datetime
@@ -17,17 +18,29 @@ from django.conf import settings
 from django.contrib.auth.models import User
 from django.core import mail
 from django.test.client import RequestFactory
+from openedx.core.djangoapps.user_api.accounts import (
+    USERNAME_MAX_LENGTH,
+    PRIVATE_VISIBILITY
+)
+from openedx.core.djangoapps.user_api.accounts.api import (
+    get_account_settings,
+    update_account_settings,
+    create_account,
+    activate_account,
+    request_password_change
+)
+from openedx.core.djangoapps.user_api.errors import (
+    UserNotFound, UserNotAuthorized,
+    AccountUpdateError, AccountValidationError, AccountUserAlreadyExists,
+    AccountUsernameInvalid, AccountEmailInvalid, AccountPasswordInvalid,
+    AccountRequestError
+)
+from openedx.core.djangoapps.user_api.accounts.tests.testutils import (
+    INVALID_EMAILS, INVALID_PASSWORDS, INVALID_USERNAMES, VALID_USERNAMES_UNICODE
+)
 from openedx.core.djangolib.testing.utils import skip_unless_lms
 from student.models import PendingEmailChange
 from student.tests.tests import UserSettingsEventTestMixin
-from ...errors import (
-    UserNotFound, UserNotAuthorized, AccountUpdateError, AccountValidationError,
-    AccountUserAlreadyExists, AccountUsernameInvalid, AccountEmailInvalid, AccountPasswordInvalid, AccountRequestError
-)
-from ..api import (
-    get_account_settings, update_account_settings, create_account, activate_account, request_password_change
-)
-from .. import USERNAME_MAX_LENGTH, EMAIL_MAX_LENGTH, PASSWORD_MAX_LENGTH, PRIVATE_VISIBILITY
 
 
 def mock_render_to_string(template_name, context):
@@ -193,6 +206,16 @@ class TestAccountApi(UserSettingsEventTestMixin, TestCase):
         account_settings = get_account_settings(self.default_request)[0]
         self.assertEqual("Mickey Mouse", account_settings["name"])
 
+    @patch.dict(settings.FEATURES, dict(ALLOW_EMAIL_ADDRESS_CHANGE=False))
+    def test_email_changes_disabled(self):
+        """
+        Test that email address changes are rejected when ALLOW_EMAIL_ADDRESS_CHANGE is not set.
+        """
+        disabled_update = {"email": "valid@example.com"}
+        with self.assertRaises(AccountUpdateError) as context_manager:
+            update_account_settings(self.user, disabled_update)
+        self.assertIn("Email address changes have been disabled", context_manager.exception.developer_message)
+
     @patch('openedx.core.djangoapps.user_api.accounts.serializers.AccountUserSerializer.save')
     def test_serializer_save_fails(self, serializer_save):
         """
@@ -236,7 +259,7 @@ class TestAccountApi(UserSettingsEventTestMixin, TestCase):
 @attr(shard=2)
 @patch('openedx.core.djangoapps.user_api.accounts.image_helpers._PROFILE_IMAGE_SIZES', [50, 10])
 @patch.dict(
-    'openedx.core.djangoapps.user_api.accounts.image_helpers.PROFILE_IMAGE_SIZES_MAP',
+    'django.conf.settings.PROFILE_IMAGE_SIZES_MAP',
     {'full': 50, 'small': 10},
     clear=True
 )
@@ -274,6 +297,7 @@ class AccountSettingsOnCreationTest(TestCase):
             'mailing_address': None,
             'year_of_birth': None,
             'country': None,
+            'social_links': [],
             'bio': None,
             'profile_image': {
                 'has_image': False,
@@ -297,42 +321,7 @@ class AccountCreationActivationAndPasswordChangeTest(TestCase):
     PASSWORD = u'ṕáśśẃőŕd'
     EMAIL = u'frank+underwood@example.com'
 
-    ORIG_HOST = 'example.com'
     IS_SECURE = False
-
-    INVALID_USERNAMES = [
-        None,
-        u'',
-        u'a',
-        u'a' * (USERNAME_MAX_LENGTH + 1),
-        u'invalid_symbol_@',
-        u'invalid-unicode_fŕáńḱ',
-    ]
-
-    INVALID_EMAILS = [
-        None,
-        u'',
-        u'a',
-        'no_domain',
-        'no+domain',
-        '@',
-        '@domain.com',
-        'test@no_extension',
-        u'fŕáńḱ@example.com',
-
-        # Long email -- subtract the length of the @domain
-        # except for one character (so we exceed the max length limit)
-        u'{user}@example.com'.format(
-            user=(u'e' * (EMAIL_MAX_LENGTH - 11))
-        )
-    ]
-
-    INVALID_PASSWORDS = [
-        None,
-        u'',
-        u'a',
-        u'a' * (PASSWORD_MAX_LENGTH + 1)
-    ]
 
     @skip_unless_lms
     def test_activate_account(self):
@@ -401,7 +390,7 @@ class AccountCreationActivationAndPasswordChangeTest(TestCase):
         activate_account(activation_key)
 
         # Request a password change
-        request_password_change(self.EMAIL, self.ORIG_HOST, self.IS_SECURE)
+        request_password_change(self.EMAIL, self.IS_SECURE)
 
         # Verify that one email message has been sent
         self.assertEqual(len(mail.outbox), 1)
@@ -415,7 +404,7 @@ class AccountCreationActivationAndPasswordChangeTest(TestCase):
     @skip_unless_lms
     def test_request_password_change_invalid_user(self):
         with self.assertRaises(UserNotFound):
-            request_password_change(self.EMAIL, self.ORIG_HOST, self.IS_SECURE)
+            request_password_change(self.EMAIL, self.IS_SECURE)
 
         # Verify that no email messages have been sent
         self.assertEqual(len(mail.outbox), 0)
@@ -425,7 +414,7 @@ class AccountCreationActivationAndPasswordChangeTest(TestCase):
         # Create an account, but do not activate it
         create_account(self.USERNAME, self.PASSWORD, self.EMAIL)
 
-        request_password_change(self.EMAIL, self.ORIG_HOST, self.IS_SECURE)
+        request_password_change(self.EMAIL, self.IS_SECURE)
 
         # Verify that the activation email was still sent
         self.assertEqual(len(mail.outbox), 1)
@@ -442,3 +431,35 @@ class AccountCreationActivationAndPasswordChangeTest(TestCase):
             return False
         else:
             return True
+
+    @patch("openedx.core.djangoapps.site_configuration.helpers.get_value", Mock(return_value=False))
+    def test_create_account_not_allowed(self):
+        """
+        Test case to check user creation is forbidden when ALLOW_PUBLIC_ACCOUNT_CREATION feature flag is turned off
+        """
+        response = create_account(self.USERNAME, self.PASSWORD, self.EMAIL)
+        self.assertEqual(response.status_code, 403)
+
+
+@attr(shard=2)
+@ddt.ddt
+class AccountCreationUnicodeUsernameTest(TestCase):
+    """
+    Test cases to cover the account initialization workflow
+    """
+    PASSWORD = u'unicode-user-password'
+    EMAIL = u'unicode-user-username@example.com'
+
+    @ddt.data(*VALID_USERNAMES_UNICODE)
+    def test_unicode_usernames(self, unicode_username):
+        with patch.dict(settings.FEATURES, {'ENABLE_UNICODE_USERNAME': False}):
+            with self.assertRaises(AccountUsernameInvalid):
+                create_account(unicode_username, self.PASSWORD, self.EMAIL)  # Feature is disabled, therefore invalid.
+
+        with patch.dict(settings.FEATURES, {'ENABLE_UNICODE_USERNAME': True}):
+            try:
+                create_account(unicode_username, self.PASSWORD, self.EMAIL)
+            except AccountUsernameInvalid:
+                self.fail(u'The API should accept Unicode username `{unicode_username}`.'.format(
+                    unicode_username=unicode_username,
+                ))

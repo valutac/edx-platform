@@ -1,37 +1,46 @@
 """
 Grades related signals.
 """
-
+from contextlib import contextmanager
 from logging import getLogger
 
+from crum import get_current_user
 from django.dispatch import receiver
-from submissions.models import score_set, score_reset
+from xblock.scorable import ScorableXBlockMixin, Score
 
 from courseware.model_data import get_score, set_score
 from eventtracking import tracker
-from openedx.core.lib.grade_utils import is_score_higher
+from lms.djangoapps.instructor_task.tasks_helper.module_state import GRADES_OVERRIDE_EVENT_TYPE
+from openedx.core.lib.grade_utils import is_score_higher_or_equal
 from student.models import user_by_anonymous_id
-from util.date_utils import to_timestamp
+from submissions.models import score_reset, score_set
 from track.event_transaction_utils import (
-    get_event_transaction_type,
+    create_new_event_transaction_id,
     get_event_transaction_id,
-    set_event_transaction_type,
-    create_new_event_transaction_id
+    get_event_transaction_type,
+    set_event_transaction_type
 )
+from util.date_utils import to_timestamp
+
+from ..constants import ScoreDatabaseTableEnum
+from ..new.course_grade_factory import CourseGradeFactory
+from ..scores import weighted_score
+from ..tasks import RECALCULATE_GRADE_DELAY, recalculate_subsection_grade_v3
 from .signals import (
     PROBLEM_RAW_SCORE_CHANGED,
     PROBLEM_WEIGHTED_SCORE_CHANGED,
-    SUBSECTION_SCORE_CHANGED,
     SCORE_PUBLISHED,
+    SUBSECTION_SCORE_CHANGED,
+    SUBSECTION_OVERRIDE_CHANGED
 )
-from ..constants import ScoreDatabaseTableEnum
-from ..new.course_grade import CourseGradeFactory
-from ..scores import weighted_score
-from ..tasks import recalculate_subsection_grade_v3, RECALCULATE_GRADE_DELAY
 
 log = getLogger(__name__)
 
+# define values to be used in grading events
+GRADES_RESCORE_EVENT_TYPE = 'edx.grades.problem.rescored'
 PROBLEM_SUBMITTED_EVENT_TYPE = 'edx.grades.problem.submitted'
+SUBSECTION_OVERRIDE_EVENT_TYPE = 'edx.grades.subsection.score_overridden'
+STATE_DELETED_EVENT_TYPE = 'edx.grades.problem.state_deleted'
 
 
 @receiver(score_set)
@@ -56,6 +65,9 @@ def submissions_score_set_handler(sender, **kwargs):  # pylint: disable=unused-a
     usage_id = kwargs['item_id']
     user = user_by_anonymous_id(kwargs['anonymous_user_id'])
     if user is None:
+        return
+    if points_possible == 0:
+        # This scenario is known to not succeed, see TNL-6559 for details.
         return
 
     PROBLEM_WEIGHTED_SCORE_CHANGED.send(
@@ -100,8 +112,28 @@ def submissions_score_reset_handler(sender, **kwargs):  # pylint: disable=unused
         course_id=course_id,
         usage_id=usage_id,
         modified=kwargs['created_at'],
+        score_deleted=True,
         score_db_table=ScoreDatabaseTableEnum.submissions,
     )
+
+
+@contextmanager
+def disconnect_submissions_signal_receiver(signal):
+    """
+    Context manager to be used for temporarily disconnecting edx-submission's set or reset signal.
+    """
+    if signal == score_set:
+        handler = submissions_score_set_handler
+    else:
+        if signal != score_reset:
+            raise ValueError("This context manager only deal with score_set and score_reset signals.")
+        handler = submissions_score_reset_handler
+
+    signal.disconnect(handler)
+    try:
+        yield
+    finally:
+        signal.connect(handler)
 
 
 @receiver(SCORE_PUBLISHED)
@@ -117,7 +149,7 @@ def score_published_handler(sender, block, user, raw_earned, raw_possible, only_
         if previous_score is not None:
             prev_raw_earned, prev_raw_possible = (previous_score.grade, previous_score.max_grade)
 
-            if not is_score_higher(prev_raw_earned, prev_raw_possible, raw_earned, raw_possible):
+            if not is_score_higher_or_equal(prev_raw_earned, prev_raw_possible, raw_earned, raw_possible):
                 update_score = False
                 log.warning(
                     u"Grades: Rescore is not higher than previous: "
@@ -127,7 +159,14 @@ def score_published_handler(sender, block, user, raw_earned, raw_possible, only_
                 )
 
     if update_score:
+        # Set the problem score in CSM.
         score_modified_time = set_score(user.id, block.location, raw_earned, raw_possible)
+
+        # Set the problem score on the xblock.
+        if isinstance(block, ScorableXBlockMixin):
+            block.set_score(Score(raw_earned=raw_earned, raw_possible=raw_possible))
+
+        # Fire a signal (consumed by enqueue_subsection_update, below)
         PROBLEM_RAW_SCORE_CHANGED.send(
             sender=None,
             raw_earned=raw_earned,
@@ -173,12 +212,13 @@ def problem_raw_score_changed_handler(sender, **kwargs):  # pylint: disable=unus
 
 
 @receiver(PROBLEM_WEIGHTED_SCORE_CHANGED)
+@receiver(SUBSECTION_OVERRIDE_CHANGED)
 def enqueue_subsection_update(sender, **kwargs):  # pylint: disable=unused-argument
     """
-    Handles the PROBLEM_WEIGHTED_SCORE_CHANGED signal by
+    Handles the PROBLEM_WEIGHTED_SCORE_CHANGED or SUBSECTION_OVERRIDE_CHANGED signals by
     enqueueing a subsection update operation to occur asynchronously.
     """
-    _emit_problem_submitted_event(kwargs)
+    _emit_event(kwargs)
     result = recalculate_subsection_grade_v3.apply_async(
         kwargs=dict(
             user_id=kwargs['user_id'],
@@ -194,12 +234,6 @@ def enqueue_subsection_update(sender, **kwargs):  # pylint: disable=unused-argum
         ),
         countdown=RECALCULATE_GRADE_DELAY,
     )
-    log.info(
-        u'Grades: Request async calculation of subsection grades with args: {}. Task [{}]'.format(
-            ', '.join('{}:{}'.format(arg, kwargs[arg]) for arg in sorted(kwargs)),
-            getattr(result, 'id', 'N/A'),
-        )
-    )
 
 
 @receiver(SUBSECTION_SCORE_CHANGED)
@@ -207,15 +241,17 @@ def recalculate_course_grade(sender, course, course_structure, user, **kwargs): 
     """
     Updates a saved course grade.
     """
-    CourseGradeFactory().update(user, course, course_structure)
+    CourseGradeFactory().update(user, course=course, course_structure=course_structure)
 
 
-def _emit_problem_submitted_event(kwargs):
+def _emit_event(kwargs):
     """
-    Emits a problem submitted event only if
-    there is no current event transaction type,
-    i.e. we have not reached this point in the
-    code via a rescore or student state deletion.
+    Emits a problem submitted event only if there is no current event
+    transaction type, i.e. we have not reached this point in the code via a
+    rescore or student state deletion.
+
+    If the event transaction type has already been set and the transacation is
+    a rescore, emits a problem rescored event.
     """
     root_type = get_event_transaction_type()
 
@@ -234,5 +270,37 @@ def _emit_problem_submitted_event(kwargs):
                 'event_transaction_type': unicode(PROBLEM_SUBMITTED_EVENT_TYPE),
                 'weighted_earned': kwargs.get('weighted_earned'),
                 'weighted_possible': kwargs.get('weighted_possible'),
+            }
+        )
+
+    if root_type in [GRADES_RESCORE_EVENT_TYPE, GRADES_OVERRIDE_EVENT_TYPE]:
+        current_user = get_current_user()
+        instructor_id = getattr(current_user, 'id', None)
+        tracker.emit(
+            unicode(GRADES_RESCORE_EVENT_TYPE),
+            {
+                'course_id': unicode(kwargs['course_id']),
+                'user_id': unicode(kwargs['user_id']),
+                'problem_id': unicode(kwargs['usage_id']),
+                'new_weighted_earned': kwargs.get('weighted_earned'),
+                'new_weighted_possible': kwargs.get('weighted_possible'),
+                'only_if_higher': kwargs.get('only_if_higher'),
+                'instructor_id': unicode(instructor_id),
+                'event_transaction_id': unicode(get_event_transaction_id()),
+                'event_transaction_type': unicode(root_type),
+            }
+        )
+
+    if root_type in [SUBSECTION_OVERRIDE_EVENT_TYPE]:
+        tracker.emit(
+            unicode(SUBSECTION_OVERRIDE_EVENT_TYPE),
+            {
+                'course_id': unicode(kwargs['course_id']),
+                'user_id': unicode(kwargs['user_id']),
+                'problem_id': unicode(kwargs['usage_id']),
+                'only_if_higher': kwargs.get('only_if_higher'),
+                'override_deleted': kwargs.get('score_deleted', False),
+                'event_transaction_id': unicode(get_event_transaction_id()),
+                'event_transaction_type': unicode(root_type),
             }
         )

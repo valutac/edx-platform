@@ -8,16 +8,10 @@ import logging
 
 from django.conf import settings
 from django.core.urlresolvers import reverse
-from eventtracking import tracker
 from opaque_keys import InvalidKeyError
 from opaque_keys.edx.keys import CourseKey
 
 from branding import api as branding_api
-from openedx.core.djangoapps.content.course_overviews.models import CourseOverview
-from xmodule.modulestore.django import modulestore
-from openedx.core.djangoapps.xmodule_django.models import CourseKeyField
-from util.organizations_helpers import get_course_organizations
-
 from certificates.models import (
     CertificateGenerationConfiguration,
     CertificateGenerationCourseSetting,
@@ -27,10 +21,14 @@ from certificates.models import (
     CertificateTemplateAsset,
     ExampleCertificateSet,
     GeneratedCertificate,
-    certificate_status_for_student,
+    certificate_status_for_student
 )
 from certificates.queue import XQueueCertInterface
-
+from eventtracking import tracker
+from openedx.core.djangoapps.content.course_overviews.models import CourseOverview
+from openedx.core.djangoapps.xmodule_django.models import CourseKeyField
+from util.organizations_helpers import get_course_organizations
+from xmodule.modulestore.django import modulestore
 
 log = logging.getLogger("edx.certificate")
 MODES = GeneratedCertificate.MODES
@@ -63,6 +61,7 @@ def format_certificate_for_user(username, cert):
         "grade": cert.grade,
         "created": cert.created_date,
         "modified": cert.modified_date,
+        "is_passing": is_passing_status(cert.status),
 
         # NOTE: the download URL is not currently being set for webview certificates.
         # In the future, we can update this to construct a URL to the webview certificate
@@ -235,8 +234,9 @@ def certificate_downloadable_status(student, course_key):
         'download_url': None,
         'uuid': None,
     }
+    may_view_certificate = CourseOverview.get_from_id(course_key).may_certify()
 
-    if current_status['status'] == CertificateStatuses.downloadable:
+    if current_status['status'] == CertificateStatuses.downloadable and may_view_certificate:
         response_data['is_downloadable'] = True
         response_data['download_url'] = current_status['download_url'] or get_certificate_url(student.id, course_key)
         response_data['uuid'] = current_status['uuid']

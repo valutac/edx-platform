@@ -2,15 +2,16 @@
 Tests for reset_grades management command.
 """
 from datetime import datetime, timedelta
+
 import ddt
 from django.core.management.base import CommandError
 from django.test import TestCase
 from freezegun import freeze_time
-from mock import patch, MagicMock
+from mock import MagicMock, patch
+from opaque_keys.edx.locator import BlockUsageLocator, CourseLocator
 
 from lms.djangoapps.grades.management.commands import reset_grades
-from lms.djangoapps.grades.models import PersistentSubsectionGrade, PersistentCourseGrade
-from opaque_keys.edx.locator import CourseLocator, BlockUsageLocator
+from lms.djangoapps.grades.models import PersistentCourseGrade, PersistentSubsectionGrade
 
 
 @ddt.ddt
@@ -81,39 +82,43 @@ class TestResetGrades(TestCase):
             "earned_graded": 6.0,
             "possible_graded": 8.0,
             "visible_blocks": MagicMock(),
-            "attempted": True,
+            "first_attempted": datetime.now(),
         }
 
         for course_key in courses_keys:
             for user_id in self.user_ids:
                 course_grade_params['user_id'] = user_id
                 course_grade_params['course_id'] = course_key
-                PersistentCourseGrade.update_or_create_course_grade(**course_grade_params)
+                PersistentCourseGrade.update_or_create(**course_grade_params)
                 for subsection_key in self.subsection_keys_by_course[course_key]:
                     subsection_grade_params['user_id'] = user_id
                     subsection_grade_params['usage_key'] = subsection_key
                     PersistentSubsectionGrade.update_or_create_grade(**subsection_grade_params)
 
-    def _assert_grades_exist_for_courses(self, course_keys):
+    def _assert_grades_exist_for_courses(self, course_keys, db_table=None):
         """
         Assert grades for given courses exist.
         """
         for course_key in course_keys:
-            self.assertIsNotNone(PersistentCourseGrade.read_course_grade(self.user_ids[0], course_key))
-            for subsection_key in self.subsection_keys_by_course[course_key]:
-                self.assertIsNotNone(PersistentSubsectionGrade.read_grade(self.user_ids[0], subsection_key))
+            if db_table == "course" or db_table is None:
+                self.assertIsNotNone(PersistentCourseGrade.read(self.user_ids[0], course_key))
+            if db_table == "subsection" or db_table is None:
+                for subsection_key in self.subsection_keys_by_course[course_key]:
+                    self.assertIsNotNone(PersistentSubsectionGrade.read_grade(self.user_ids[0], subsection_key))
 
-    def _assert_grades_absent_for_courses(self, course_keys):
+    def _assert_grades_absent_for_courses(self, course_keys, db_table=None):
         """
         Assert grades for given courses do not exist.
         """
         for course_key in course_keys:
-            with self.assertRaises(PersistentCourseGrade.DoesNotExist):
-                PersistentCourseGrade.read_course_grade(self.user_ids[0], course_key)
+            if db_table == "course" or db_table is None:
+                with self.assertRaises(PersistentCourseGrade.DoesNotExist):
+                    PersistentCourseGrade.read(self.user_ids[0], course_key)
 
-            for subsection_key in self.subsection_keys_by_course[course_key]:
-                with self.assertRaises(PersistentSubsectionGrade.DoesNotExist):
-                    PersistentSubsectionGrade.read_grade(self.user_ids[0], subsection_key)
+            if db_table == "subsection" or db_table is None:
+                for subsection_key in self.subsection_keys_by_course[course_key]:
+                    with self.assertRaises(PersistentSubsectionGrade.DoesNotExist):
+                        PersistentSubsectionGrade.read_grade(self.user_ids[0], subsection_key)
 
     def _assert_stat_logged(self, mock_log, num_rows, grade_model_class, message_substring, log_offset):
         self.assertIn('reset_grade: ' + message_substring, mock_log.info.call_args_list[log_offset][0][0])
@@ -150,7 +155,7 @@ class TestResetGrades(TestCase):
         self._update_or_create_grades()
         self._assert_grades_exist_for_courses(self.course_keys)
 
-        with self.assertNumQueries(4):
+        with self.assertNumQueries(7):
             self.command.handle(delete=True, all_courses=True)
 
         self._assert_grades_absent_for_courses(self.course_keys)
@@ -169,7 +174,7 @@ class TestResetGrades(TestCase):
         self._update_or_create_grades()
         self._assert_grades_exist_for_courses(self.course_keys)
 
-        with self.assertNumQueries(4):
+        with self.assertNumQueries(6):
             self.command.handle(
                 delete=True,
                 courses=[unicode(course_key) for course_key in self.course_keys[:num_courses_to_reset]]
@@ -194,7 +199,7 @@ class TestResetGrades(TestCase):
         with freeze_time(self._date_from_now(days=4)):
             self._update_or_create_grades(self.course_keys[:num_courses_with_updated_grades])
 
-        with self.assertNumQueries(4):
+        with self.assertNumQueries(6):
             self.command.handle(delete=True, modified_start=self._date_str_from_now(days=2), all_courses=True)
 
         self._assert_grades_absent_for_courses(self.course_keys[:num_courses_with_updated_grades])
@@ -209,7 +214,7 @@ class TestResetGrades(TestCase):
         with freeze_time(self._date_from_now(days=5)):
             self._update_or_create_grades(self.course_keys[2:4])
 
-        with self.assertNumQueries(4):
+        with self.assertNumQueries(6):
             self.command.handle(
                 delete=True,
                 modified_start=self._date_str_from_now(days=2),
@@ -221,6 +226,17 @@ class TestResetGrades(TestCase):
         # should be deleted.
         self._assert_grades_absent_for_courses(self.course_keys[:2])
         self._assert_grades_exist_for_courses(self.course_keys[2:])
+
+    @ddt.data('subsection', 'course')
+    def test_specify_db_table(self, db_table):
+        self._update_or_create_grades()
+        self._assert_grades_exist_for_courses(self.course_keys)
+        self.command.handle(delete=True, all_courses=True, db_table=db_table)
+        self._assert_grades_absent_for_courses(self.course_keys, db_table=db_table)
+        if db_table == "subsection":
+            self._assert_grades_exist_for_courses(self.course_keys, db_table='course')
+        else:
+            self._assert_grades_exist_for_courses(self.course_keys, db_table='subsection')
 
     @patch('lms.djangoapps.grades.management.commands.reset_grades.log')
     def test_dry_run_all_courses(self, mock_log):
@@ -279,18 +295,25 @@ class TestResetGrades(TestCase):
         with self.assertRaisesRegexp(CommandError, 'Invalid key specified.*invalid/key'):
             self.command.handle(dry_run=True, courses=['invalid/key'])
 
+    def test_invalid_db_table(self):
+        with self.assertRaisesMessage(
+                CommandError,
+                'Invalid value for db_table. Valid options are "subsection" or "course" only.'
+        ):
+            self.command.handle(delete=True, all_courses=True, db_table="not course or subsection")
+
     def test_no_run_mode(self):
-        with self.assertRaisesMessage(CommandError, 'Either --delete or --dry_run must be specified.'):
+        with self.assertRaisesMessage(CommandError, 'Must specify exactly one of --delete, --dry_run'):
             self.command.handle(all_courses=True)
 
     def test_both_run_modes(self):
-        with self.assertRaisesMessage(CommandError, 'Both --delete and --dry_run cannot be specified.'):
+        with self.assertRaisesMessage(CommandError, 'Must specify exactly one of --delete, --dry_run'):
             self.command.handle(all_courses=True, dry_run=True, delete=True)
 
     def test_no_course_mode(self):
-        with self.assertRaisesMessage(CommandError, 'Either --courses or --all_courses must be specified.'):
+        with self.assertRaisesMessage(CommandError, 'Must specify exactly one of --courses, --all_courses'):
             self.command.handle(dry_run=True)
 
     def test_both_course_modes(self):
-        with self.assertRaisesMessage(CommandError, 'Both --courses and --all_courses cannot be specified.'):
+        with self.assertRaisesMessage(CommandError, 'Must specify exactly one of --courses, --all_courses'):
             self.command.handle(dry_run=True, all_courses=True, courses=['some/course/key'])

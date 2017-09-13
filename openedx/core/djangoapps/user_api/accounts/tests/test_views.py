@@ -27,6 +27,7 @@ from openedx.core.djangoapps.user_api.accounts import ACCOUNT_VISIBILITY_PREF_KE
 from openedx.core.djangoapps.user_api.models import UserPreference
 from openedx.core.djangoapps.user_api.preferences.api import set_user_preference
 from openedx.core.djangolib.testing.utils import CacheIsolationTestCase, skip_unless_lms
+from openedx.core.lib.token_utils import JwtBuilder
 from student.models import UserProfile, LanguageProficiency, PendingEmailChange
 from student.tests.factories import (
     AdminFactory, ContentTypeFactory, TEST_PASSWORD, PermissionFactory, SuperuserFactory, UserFactory
@@ -199,7 +200,7 @@ class TestOwnUsernameAPI(CacheIsolationTestCase, UserAPITestCase):
 @skip_unless_lms
 @patch('openedx.core.djangoapps.user_api.accounts.image_helpers._PROFILE_IMAGE_SIZES', [50, 10])
 @patch.dict(
-    'openedx.core.djangoapps.user_api.accounts.image_helpers.PROFILE_IMAGE_SIZES_MAP',
+    'django.conf.settings.PROFILE_IMAGE_SIZES_MAP',
     {'full': 50, 'small': 10},
     clear=True
 )
@@ -221,7 +222,7 @@ class TestAccountsAPI(CacheIsolationTestCase, UserAPITestCase):
         Verify that the shareable fields from the account are returned
         """
         data = response.data
-        self.assertEqual(8, len(data))
+        self.assertEqual(10, len(data))
         self.assertEqual(self.user.username, data["username"])
         self.assertEqual("US", data["country"])
         self._verify_profile_image_data(data, True)
@@ -246,7 +247,7 @@ class TestAccountsAPI(CacheIsolationTestCase, UserAPITestCase):
         Verify that all account fields are returned (even those that are not shareable).
         """
         data = response.data
-        self.assertEqual(17, len(data))
+        self.assertEqual(18, len(data))
         self.assertEqual(self.user.username, data["username"])
         self.assertEqual(self.user.first_name + " " + self.user.last_name, data["name"])
         self.assertEqual("US", data["country"])
@@ -304,7 +305,7 @@ class TestAccountsAPI(CacheIsolationTestCase, UserAPITestCase):
         """
         self.different_client.login(username=self.different_user.username, password=TEST_PASSWORD)
         self.create_mock_profile(self.user)
-        with self.assertNumQueries(19):
+        with self.assertNumQueries(20):
             response = self.send_get(self.different_client)
         self._verify_full_shareable_account_response(response, account_privacy=ALL_USERS_VISIBILITY)
 
@@ -319,7 +320,7 @@ class TestAccountsAPI(CacheIsolationTestCase, UserAPITestCase):
         """
         self.different_client.login(username=self.different_user.username, password=TEST_PASSWORD)
         self.create_mock_profile(self.user)
-        with self.assertNumQueries(19):
+        with self.assertNumQueries(20):
             response = self.send_get(self.different_client)
         self._verify_private_account_response(response, account_privacy=PRIVATE_VISIBILITY)
 
@@ -375,7 +376,7 @@ class TestAccountsAPI(CacheIsolationTestCase, UserAPITestCase):
             with self.assertNumQueries(queries):
                 response = self.send_get(self.client)
             data = response.data
-            self.assertEqual(17, len(data))
+            self.assertEqual(18, len(data))
             self.assertEqual(self.user.username, data["username"])
             self.assertEqual(self.user.first_name + " " + self.user.last_name, data["name"])
             for empty_field in ("year_of_birth", "level_of_education", "mailing_address", "bio"):
@@ -394,12 +395,12 @@ class TestAccountsAPI(CacheIsolationTestCase, UserAPITestCase):
             self.assertEqual(False, data["accomplishments_shared"])
 
         self.client.login(username=self.user.username, password=TEST_PASSWORD)
-        verify_get_own_information(17)
+        verify_get_own_information(18)
 
         # Now make sure that the user can get the same information, even if not active
         self.user.is_active = False
         self.user.save()
-        verify_get_own_information(11)
+        verify_get_own_information(12)
 
     def test_get_account_empty_string(self):
         """
@@ -413,7 +414,7 @@ class TestAccountsAPI(CacheIsolationTestCase, UserAPITestCase):
         legacy_profile.save()
 
         self.client.login(username=self.user.username, password=TEST_PASSWORD)
-        with self.assertNumQueries(17):
+        with self.assertNumQueries(18):
             response = self.send_get(self.client)
         for empty_field in ("level_of_education", "gender", "country", "bio"):
             self.assertIsNone(response.data[empty_field])
@@ -453,7 +454,7 @@ class TestAccountsAPI(CacheIsolationTestCase, UserAPITestCase):
         ("country", "GB", "XY", u'"XY" is not a valid choice.'),
         ("year_of_birth", 2009, "not_an_int", u"A valid integer is required."),
         ("name", "bob", "z" * 256, u"Ensure this value has at most 255 characters (it has 256)."),
-        ("name", u"ȻħȺɍłɇs", "z   ", "The name field must be at least 2 characters long."),
+        ("name", u"ȻħȺɍłɇs", "z   ", u"The name field must be at least 2 characters long."),
         ("goals", "Smell the roses"),
         ("mailing_address", "Sesame Street"),
         # Note that we store the raw data, so it is up to client to escape the HTML.
@@ -607,7 +608,7 @@ class TestAccountsAPI(CacheIsolationTestCase, UserAPITestCase):
         verify_change_info(name_change_info[1], "Mickey Mouse", self.user.username, "Donald Duck")
 
     @patch.dict(
-        'openedx.core.djangoapps.user_api.accounts.image_helpers.PROFILE_IMAGE_SIZES_MAP',
+        'django.conf.settings.PROFILE_IMAGE_SIZES_MAP',
         {'full': 50, 'medium': 30, 'small': 10},
         clear=True
     )
@@ -676,16 +677,25 @@ class TestAccountsAPI(CacheIsolationTestCase, UserAPITestCase):
             self.assertItemsEqual(response.data["language_proficiencies"], proficiencies)
 
     @ddt.data(
-        (u"not_a_list", {u'non_field_errors': [u'Expected a list of items but got type "unicode".']}),
-        ([u"not_a_JSON_object"], [{u'non_field_errors': [u'Invalid data. Expected a dictionary, but got unicode.']}]),
-        ([{}], [OrderedDict([('code', [u'This field is required.'])])]),
+        (
+            u"not_a_list",
+            {u'non_field_errors': [u'Expected a list of items but got type "unicode".']}
+        ),
+        (
+            [u"not_a_JSON_object"],
+            [{u'non_field_errors': [u'Invalid data. Expected a dictionary, but got unicode.']}]
+        ),
+        (
+            [{}],
+            [{'code': [u'This field is required.']}]
+        ),
         (
             [{u"code": u"invalid_language_code"}],
-            [OrderedDict([('code', [u'"invalid_language_code" is not a valid choice.'])])]
+            [{'code': [u'"invalid_language_code" is not a valid choice.']}]
         ),
         (
             [{u"code": u"kw"}, {u"code": u"el"}, {u"code": u"kw"}],
-            ['The language_proficiencies field must consist of unique languages']
+            [u'The language_proficiencies field must consist of unique languages.']
         ),
     )
     @ddt.unpack
@@ -759,7 +769,7 @@ class TestAccountsAPI(CacheIsolationTestCase, UserAPITestCase):
         response = self.send_get(client)
         if has_full_access:
             data = response.data
-            self.assertEqual(17, len(data))
+            self.assertEqual(18, len(data))
             self.assertEqual(self.user.username, data["username"])
             self.assertEqual(self.user.first_name + " " + self.user.last_name, data["name"])
             self.assertEqual(self.user.email, data["email"])
@@ -829,12 +839,20 @@ class TestAccountDeactivation(TestCase):
 
     def setUp(self):
         super(TestAccountDeactivation, self).setUp()
-        self.superuser = SuperuserFactory()
-        self.staff_user = AdminFactory()
         self.test_user = UserFactory()
         self.url = reverse('accounts_deactivation', kwargs={'username': self.test_user.username})
 
-    def assert_activation_status(self, expected_status=status.HTTP_200_OK, expected_activation_status=False):
+    def build_jwt_headers(self, user):
+        """
+        Helper function for creating headers for the JWT authentication.
+        """
+        token = JwtBuilder(user).build_token([])
+        headers = {
+            'HTTP_AUTHORIZATION': 'JWT ' + token
+        }
+        return headers
+
+    def assert_activation_status(self, headers, expected_status=status.HTTP_200_OK, expected_activation_status=False):
         """
         Helper function for making a request to the deactivation endpoint, and asserting the status.
 
@@ -842,7 +860,8 @@ class TestAccountDeactivation(TestCase):
             expected_status(int): Expected request's response status.
             expected_activation_status(bool): Expected user has_usable_password attribute value.
         """
-        response = self.client.post(self.url)
+        self.assertTrue(self.test_user.has_usable_password())  # pylint: disable=no-member
+        response = self.client.post(self.url, **headers)
         self.assertEqual(response.status_code, expected_status)
         self.test_user.refresh_from_db()  # pylint: disable=no-member
         self.assertEqual(self.test_user.has_usable_password(), expected_activation_status)  # pylint: disable=no-member
@@ -851,9 +870,9 @@ class TestAccountDeactivation(TestCase):
         """
         Verify a user is deactivated when a superuser posts to the deactivation endpoint.
         """
-        self.client.login(username=self.superuser.username, password=TEST_PASSWORD)
-        self.assertTrue(self.test_user.has_usable_password())  # pylint: disable=no-member
-        self.assert_activation_status()
+        superuser = SuperuserFactory()
+        headers = self.build_jwt_headers(superuser)
+        self.assert_activation_status(headers)
 
     def test_user_with_permission_deactivates_user(self):
         """
@@ -867,17 +886,28 @@ class TestAccountDeactivation(TestCase):
             )
         )
         user.user_permissions.add(permission)  # pylint: disable=no-member
-        self.client.login(username=user.username, password=TEST_PASSWORD)
+        headers = self.build_jwt_headers(user)
         self.assertTrue(self.test_user.has_usable_password())  # pylint: disable=no-member
-        self.assert_activation_status()
+        self.assert_activation_status(headers)
 
     def test_unauthorized_rejection(self):
         """
         Verify unauthorized users cannot deactivate accounts.
         """
-        self.client.login(username=self.test_user.username, password=TEST_PASSWORD)
-        self.assertTrue(self.test_user.has_usable_password())  # pylint: disable=no-member
+        headers = self.build_jwt_headers(self.test_user)
         self.assert_activation_status(
+            headers,
             expected_status=status.HTTP_403_FORBIDDEN,
+            expected_activation_status=True
+        )
+
+    def test_on_jwt_headers_rejection(self):
+        """
+        Verify users who are not JWT authenticated are rejected.
+        """
+        user = UserFactory()
+        self.assert_activation_status(
+            {},
+            expected_status=status.HTTP_401_UNAUTHORIZED,
             expected_activation_status=True
         )

@@ -13,6 +13,12 @@ import uuid
 import ddt
 from contracts import contract
 from nose.plugins.attrib import attr
+# For the cache tests to work, we need to be using the Django default
+# settings (not our usual cms or lms test settings) and they need to
+# be configured before importing from django.core.cache
+from django.conf import settings
+if not settings.configured:
+    settings.configure()
 from django.core.cache import caches, InvalidCacheBackendError
 
 from openedx.core.lib import tempdir
@@ -2039,12 +2045,6 @@ class TestPublish(SplitModuleTest):
     """
     Test the publishing api
     """
-    def setUp(self):
-        super(TestPublish, self).setUp()
-
-    def tearDown(self):
-        SplitModuleTest.tearDown(self)
-
     @patch('xmodule.tabs.CourseTab.from_json', side_effect=mock_tab_from_json)
     def test_publish_safe(self, _from_json):
         """

@@ -2,8 +2,9 @@
 Helpers methods for site configuration.
 """
 from django.conf import settings
-from openedx.core.djangoapps.site_configuration.models import SiteConfiguration
+
 from microsite_configuration import microsite
+from openedx.core.djangoapps.site_configuration.models import SiteConfiguration
 
 
 def get_current_site_configuration():
@@ -186,6 +187,21 @@ def get_value_for_org(org, val_name, default=None):
         return SiteConfiguration.get_value_for_org(org, val_name, default)
     else:
         return microsite.get_value_for_org(org, val_name, default)
+
+
+def get_current_site_orgs():
+    """
+    This returns the orgs configured in site configuration or microsite configuration for the current site.
+
+    Returns:
+        list: A list of organization names.
+    """
+    course_org_filter = get_value('course_org_filter')
+    # Make sure we have a list
+    if course_org_filter and not isinstance(course_org_filter, list):
+        course_org_filter = [course_org_filter]
+
+    return course_org_filter
 
 
 def get_all_orgs():

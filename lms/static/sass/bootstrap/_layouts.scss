@@ -1,0 +1,49 @@
+// LMS layouts
+
+.content-wrapper {
+    margin-top: $baseline;
+
+    .course-tabs {
+        padding-bottom: 0;
+
+        .nav-item {
+            &.active, &:hover{
+                .nav-link {
+                    border-bottom-color: theme-color("primary");
+                    color: theme-color("primary");
+                }
+            }
+
+            .nav-link {
+                padding: $baseline/2 $baseline*3/4 $baseline*13/20;
+                border-style: solid;
+                border-width: 0 0 $baseline/5 0;
+                border-bottom-color: transparent;
+
+                @include media-breakpoint-down(md) {
+                    border: none;
+                    text-align: left;
+                    padding: 0 0 $baseline/2 0;
+                }
+            }
+        }
+    }
+
+    .main-container {
+        border: 1px solid $border-color;
+        background-color: $body-bg;
+
+        .page-header {
+            border-bottom: 1px solid $border-color;
+            padding: 20px;
+        }
+
+        .page-content {
+            padding: 20px;
+        }
+    }
+
+    &.container-fluid {
+        max-width: map-get($container-max-widths, xl);
+    }
+}

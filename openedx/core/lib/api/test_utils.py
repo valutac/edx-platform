@@ -3,8 +3,8 @@ Helpers for API tests.
 """
 import base64
 import json
-
 import re
+
 from django.test import TestCase
 from django.test.utils import override_settings
 
@@ -28,7 +28,7 @@ class ApiTestCase(TestCase):
         return getattr(self.client, method)(*args, HTTP_X_EDX_API_KEY=TEST_API_KEY, **kwargs)
 
     def get_json(self, *args, **kwargs):
-        """Make a request with the given args and return the parsed JSON repsonse"""
+        """Make a request with the given args and return the parsed JSON response"""
         resp = self.request_with_auth("get", *args, **kwargs)
         self.assertHttpOK(resp)
         self.assertTrue(resp["Content-Type"].startswith("application/json"))

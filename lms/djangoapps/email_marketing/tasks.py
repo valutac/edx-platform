@@ -6,15 +6,55 @@ import time
 from datetime import datetime, timedelta
 
 from celery import task
-from django.core.cache import cache
 from django.conf import settings
-
-from email_marketing.models import EmailMarketingConfiguration
+from django.core.cache import cache
 from sailthru.sailthru_client import SailthruClient
 from sailthru.sailthru_error import SailthruClientError
 
+from email_marketing.models import EmailMarketingConfiguration
+
 log = logging.getLogger(__name__)
 SAILTHRU_LIST_CACHE_KEY = "email.marketing.cache"
+
+
+@task(bind=True)
+def get_email_cookies_via_sailthru(self, user_email, post_parms):
+    """
+    Adds/updates Sailthru cookie information for a new user.
+     Args:
+        post_parms(dict): User profile information to pass as 'vars' to Sailthru
+    Returns:
+        cookie(str): cookie fetched from Sailthru
+    """
+
+    email_config = EmailMarketingConfiguration.current()
+    if not email_config.enabled:
+        return None
+
+    try:
+        sailthru_client = SailthruClient(email_config.sailthru_key, email_config.sailthru_secret)
+        log.info(
+            'Sending to Sailthru the user interest cookie [%s] for user [%s]',
+            post_parms.get('cookies', ''),
+            user_email
+        )
+        sailthru_response = sailthru_client.api_post("user", post_parms)
+    except SailthruClientError as exc:
+        log.error("Exception attempting to obtain cookie from Sailthru: %s", unicode(exc))
+        raise SailthruClientError
+
+    if sailthru_response.is_ok():
+        if 'keys' in sailthru_response.json and 'cookie' in sailthru_response.json['keys']:
+            cookie = sailthru_response.json['keys']['cookie']
+            return cookie
+        else:
+            log.error("No cookie returned attempting to obtain cookie from Sailthru for %s", user_email)
+    else:
+        error = sailthru_response.get_error()
+        # generally invalid email address
+        log.info("Error attempting to obtain cookie from Sailthru: %s", error.get_message())
+
+    return None
 
 
 # pylint: disable=not-callable
@@ -56,14 +96,14 @@ def update_user(self, sailthru_vars, email, site=None, new_user=False, activatio
         return
 
     # if activating user, send welcome email
-    if activation and email_config.sailthru_activation_template:
+    if activation and email_config.sailthru_welcome_template and is_default_site(site):
         scheduled_datetime = datetime.utcnow() + timedelta(seconds=email_config.welcome_email_send_delay)
         try:
             sailthru_response = sailthru_client.api_post(
                 "send",
                 {
                     "email": email,
-                    "template": email_config.sailthru_activation_template,
+                    "template": email_config.sailthru_welcome_template,
                     "schedule_time": scheduled_datetime.strftime('%Y-%m-%dT%H:%M:%SZ')
                 }
             )
@@ -79,6 +119,17 @@ def update_user(self, sailthru_vars, email, site=None, new_user=False, activatio
             if _retryable_sailthru_error(error):
                 raise self.retry(countdown=email_config.sailthru_retry_interval,
                                  max_retries=email_config.sailthru_max_retries)
+
+
+def is_default_site(site):
+    """
+    Checks whether the site is a default site or a white-label
+    Args:
+        site: A dict containing the site info
+    Returns:
+         Boolean
+    """
+    return not site or site.get('id') == settings.SITE_ID
 
 
 # pylint: disable=not-callable
@@ -145,7 +196,7 @@ def _get_or_create_user_list_for_site(sailthru_client, site=None, default_list_n
     :param: default_list_name
     :return: list name if exists or created else return None
     """
-    if site and site.get('id') != settings.SITE_ID:
+    if not is_default_site(site):
         list_name = site.get('domain', '').replace(".", "_") + "_user_list"
     else:
         list_name = default_list_name

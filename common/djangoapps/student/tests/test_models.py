@@ -1,17 +1,29 @@
 # pylint: disable=missing-docstring
 
+import datetime
 import hashlib
 
+import ddt
+import factory
+import pytz
 from django.contrib.auth.models import AnonymousUser
 from django.core.cache import cache
+from django.db.models import signals
 from django.db.models.functions import Lower
+
+from course_modes.models import CourseMode
+from course_modes.tests.factories import CourseModeFactory
+from courseware.models import DynamicUpgradeDeadlineConfiguration
+from openedx.core.djangoapps.schedules.models import Schedule
+from openedx.core.djangoapps.schedules.tests.factories import ScheduleFactory
+from openedx.core.djangolib.testing.utils import skip_unless_lms
+from student.models import CourseEnrollment
+from student.tests.factories import CourseEnrollmentFactory, UserFactory
 from xmodule.modulestore.tests.django_utils import SharedModuleStoreTestCase
 from xmodule.modulestore.tests.factories import CourseFactory
 
-from student.models import CourseEnrollment
-from student.tests.factories import UserFactory, CourseEnrollmentFactory
 
-
+@ddt.ddt
 class CourseEnrollmentTests(SharedModuleStoreTestCase):
     @classmethod
     def setUpClass(cls):
@@ -20,7 +32,8 @@ class CourseEnrollmentTests(SharedModuleStoreTestCase):
 
     def setUp(self):
         super(CourseEnrollmentTests, self).setUp()
-        self.user = UserFactory.create()
+        self.user = UserFactory()
+        self.user_2 = UserFactory()
 
     def test_enrollment_status_hash_cache_key(self):
         username = 'test-user'
@@ -82,3 +95,50 @@ class CourseEnrollmentTests(SharedModuleStoreTestCase):
         # Modifying enrollments should delete the cached value.
         CourseEnrollmentFactory.create(user=self.user)
         self.assertIsNone(cache.get(CourseEnrollment.enrollment_status_hash_cache_key(self.user)))
+
+    def test_users_enrolled_in_active_only(self):
+        """CourseEnrollment.users_enrolled_in should return only Users with active enrollments when
+        `include_inactive` has its default value (False)."""
+        CourseEnrollmentFactory.create(user=self.user, course_id=self.course.id, is_active=True)
+        CourseEnrollmentFactory.create(user=self.user_2, course_id=self.course.id, is_active=False)
+
+        active_enrolled_users = list(CourseEnrollment.objects.users_enrolled_in(self.course.id))
+        self.assertEqual([self.user], active_enrolled_users)
+
+    def test_users_enrolled_in_all(self):
+        """CourseEnrollment.users_enrolled_in should return active and inactive users when
+        `include_inactive` is True."""
+        CourseEnrollmentFactory.create(user=self.user, course_id=self.course.id, is_active=True)
+        CourseEnrollmentFactory.create(user=self.user_2, course_id=self.course.id, is_active=False)
+
+        all_enrolled_users = list(
+            CourseEnrollment.objects.users_enrolled_in(self.course.id, include_inactive=True)
+        )
+        self.assertListEqual([self.user, self.user_2], all_enrolled_users)
+
+    @skip_unless_lms
+    # NOTE: We mute the post_save signal to prevent Schedules from being created for new enrollments
+    @factory.django.mute_signals(signals.post_save)
+    def test_upgrade_deadline(self):
+        """ The property should use either the CourseMode or related Schedule to determine the deadline. """
+        course_mode = CourseModeFactory(
+            course_id=self.course.id,
+            mode_slug=CourseMode.VERIFIED,
+            # This must be in the future to ensure it is returned by downstream code.
+            expiration_datetime=datetime.datetime.now(pytz.UTC) + datetime.timedelta(days=1)
+        )
+        enrollment = CourseEnrollmentFactory(course_id=self.course.id, mode=CourseMode.AUDIT)
+        self.assertEqual(Schedule.objects.all().count(), 0)
+        self.assertEqual(enrollment.upgrade_deadline, course_mode.expiration_datetime)
+
+        # The schedule's upgrade deadline should be used if a schedule exists
+        DynamicUpgradeDeadlineConfiguration.objects.create(enabled=True)
+        schedule = ScheduleFactory(enrollment=enrollment)
+        self.assertEqual(enrollment.upgrade_deadline, schedule.upgrade_deadline)
+
+    @skip_unless_lms
+    @ddt.data(*(set(CourseMode.ALL_MODES) - set(CourseMode.AUDIT_MODES)))
+    def test_upgrade_deadline_for_non_upgradeable_enrollment(self, mode):
+        """ The property should return None if an upgrade cannot be upgraded. """
+        enrollment = CourseEnrollmentFactory(course_id=self.course.id, mode=mode)
+        self.assertIsNone(enrollment.upgrade_deadline)

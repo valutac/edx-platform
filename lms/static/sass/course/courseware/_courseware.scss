@@ -19,7 +19,6 @@ html.video-fullscreen {
   @extend %ui-print-excluded;
 
   margin: ($baseline/2) ($baseline/4) 0 0;
-  overflow: hidden;
 
   &.studio-view {
     margin: 0;
@@ -107,10 +106,21 @@ html.video-fullscreen {
     display: none;
   }
 
+  main {
+    padding: $baseline;
+  }
+
+  .course-content {
+    padding: 0;
+  }
+
+  .courseware-results-wrapper {
+    padding: ($baseline*2) 3%; // percent allows for smaller padding on mobile
+  }
+
   .course-content,
   .courseware-results-wrapper {
     @extend .content;
-    padding: ($baseline*2) 3%; // percent allows for smaller padding on mobile
     line-height: 1.6;
 
     .xblock {
@@ -446,8 +456,6 @@ html.video-fullscreen {
           }
 
           h2 {
-            @include float(right);
-            @include text-align(right);
             @include border-right(0);
             @include padding-right(0);
             margin: 12px 0 0;
@@ -492,7 +500,7 @@ html.video-fullscreen {
         }
       }
 
-      .vert > .xblock-student_view {
+      .vert {
         @extend .clearfix;
         border-bottom: 1px solid #ddd;
         margin-bottom: ($baseline*0.75);

@@ -141,6 +141,11 @@
       background: none;
       padding: 0;
     }
+
+    img {
+      margin: $baseline/2;
+      max-width: 100%;
+    }
   }
 
 
@@ -182,7 +187,7 @@
 	margin: 0;
 	@include border-radius(0, 3px, 3px, 0);
 	@include border-left(none);
-	background: $lightGrey;
+	background: $uxpl-light-blue-base;
 
 	.title {
 		@extend %t-title4;

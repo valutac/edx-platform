@@ -1,20 +1,20 @@
 # pylint: disable=missing-docstring
 import datetime
 import os
+
 import pytz
 from django.conf import settings
+from lettuce import step, world
 from mock import patch
+from nose.tools import assert_equal, assert_in, assert_is_none, assert_true
 from pytz import UTC
-from splinter.exceptions import ElementDoesNotExist
 from selenium.common.exceptions import NoAlertPresentException
-from nose.tools import assert_true, assert_equal, assert_in, assert_is_none
-from lettuce import world, step
-
-from courseware.tests.factories import InstructorFactory, BetaTesterFactory
-from courseware.access import has_access
-from student.tests.factories import UserFactory
+from splinter.exceptions import ElementDoesNotExist
 
 from common import visit_scenario_item
+from courseware.access import has_access
+from courseware.tests.factories import BetaTesterFactory, InstructorFactory
+from student.tests.factories import UserFactory
 
 TEST_COURSE_NAME = "test_course_a"
 
@@ -153,9 +153,10 @@ def set_incorrect_lti_passport(_step):
 @step(r'the course has an LTI component with (.*) fields(?:\:)?$')  # , new_page is(.*), graded is(.*)
 def add_correct_lti_to_course(_step, fields):
     category = 'lti'
+    host = getattr(settings, 'LETTUCE_HOST', '127.0.0.1')
     metadata = {
         'lti_id': 'correct_lti_id',
-        'launch_url': 'http://127.0.0.1:{}/correct_lti_endpoint'.format(settings.LTI_PORT),
+        'launch_url': 'http://{}:{}/correct_lti_endpoint'.format(host, settings.LTI_PORT),
     }
 
     if fields.strip() == 'incorrect_lti_id':  # incorrect fields
@@ -359,7 +360,10 @@ def click_grade(_step, version):
     location = world.scenario_dict['LTI'].location.html_id()
     iframe_name = 'ltiFrame-' + location
     with world.browser.get_iframe(iframe_name) as iframe:
-        iframe.find_by_name(version_map[version]['selector']).first.click()
+        css_ele = version_map[version]['selector']
+        css_loc = '#' + css_ele
+        world.wait_for_visible(css_loc)
+        world.css_click(css_loc)
         assert iframe.is_text_present(version_map[version]['expected_text'])
 
 

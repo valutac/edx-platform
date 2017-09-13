@@ -244,7 +244,6 @@
       &.studio-view {
         position: relative;
         margin: ($baseline/2) 0 0 0;
-        overflow: hidden;
       }
 
       .instructor-info-action {
@@ -390,11 +389,6 @@
           background: url('#{$static-path}/images/link-icon.png') left center no-repeat;
         }
       }
-    }
-
-    >.coursetalk-read-reviews {
-      margin-top: -200px;
-      margin-bottom: 220px;
     }
 
     header {

@@ -20,7 +20,8 @@ define(['jquery', 'underscore', 'underscore.string', 'edx-ui-toolkit/js/utils/sp
                     mockXBlockVisibilityEditorHtml = readFixtures('mock/mock-xblock-visibility-editor.underscore'),
                     PageClass = globalPageOptions.page,
                     pagedSpecificTests = globalPageOptions.pagedSpecificTests,
-                    hasVisibilityEditor = globalPageOptions.hasVisibilityEditor;
+                    hasVisibilityEditor = globalPageOptions.hasVisibilityEditor,
+                    hasMoveModal = globalPageOptions.hasMoveModal;
 
                 beforeEach(function() {
                     var newDisplayName = 'New Display Name';
@@ -48,6 +49,9 @@ define(['jquery', 'underscore', 'underscore.string', 'edx-ui-toolkit/js/utils/sp
 
                 afterEach(function() {
                     EditHelpers.uninstallMockXBlock();
+                    if (containerPage !== undefined) {
+                        containerPage.remove();
+                    }
                 });
 
                 respondWithHtml = function(html) {
@@ -231,12 +235,12 @@ define(['jquery', 'underscore', 'underscore.string', 'edx-ui-toolkit/js/utils/sp
                     });
 
                     it('can show a visibility modal for a child xblock if supported for the page', function() {
-                        var visibilityButtons, request;
+                        var accessButtons, request;
                         renderContainerPage(this, mockContainerXBlockHtml);
-                        visibilityButtons = containerPage.$('.wrapper-xblock .visibility-button');
+                        accessButtons = containerPage.$('.wrapper-xblock .access-button');
                         if (hasVisibilityEditor) {
-                            expect(visibilityButtons.length).toBe(6);
-                            visibilityButtons[0].click();
+                            expect(accessButtons.length).toBe(6);
+                            accessButtons[0].click();
                             request = AjaxHelpers.currentRequest(requests);
                             expect(str.startsWith(request.url, '/xblock/locator-component-A1/visibility_view'))
                                 .toBeTruthy();
@@ -247,7 +251,20 @@ define(['jquery', 'underscore', 'underscore.string', 'edx-ui-toolkit/js/utils/sp
                             expect(EditHelpers.isShowingModal()).toBeTruthy();
                         }
                         else {
-                            expect(visibilityButtons.length).toBe(0);
+                            expect(accessButtons.length).toBe(0);
+                        }
+                    });
+
+                    it('can show a move modal for a child xblock', function() {
+                        var moveButtons;
+                        renderContainerPage(this, mockContainerXBlockHtml);
+                        moveButtons = containerPage.$('.wrapper-xblock .move-button');
+                        if (hasMoveModal) {
+                            expect(moveButtons.length).toBe(6);
+                            moveButtons[0].click();
+                            expect(EditHelpers.isShowingModal()).toBeTruthy();
+                        } else {
+                            expect(moveButtons.length).toBe(0);
                         }
                     });
                 });
@@ -798,7 +815,8 @@ define(['jquery', 'underscore', 'underscore.string', 'edx-ui-toolkit/js/utils/sp
                 initial: 'mock/mock-container-xblock.underscore',
                 addResponse: 'mock/mock-xblock.underscore',
                 hasVisibilityEditor: true,
-                pagedSpecificTests: false
+                pagedSpecificTests: false,
+                hasMoveModal: true
             }
         );
 
@@ -811,7 +829,8 @@ define(['jquery', 'underscore', 'underscore.string', 'edx-ui-toolkit/js/utils/sp
                 initial: 'mock/mock-container-paged-xblock.underscore',
                 addResponse: 'mock/mock-xblock-paged.underscore',
                 hasVisibilityEditor: false,
-                pagedSpecificTests: true
+                pagedSpecificTests: true,
+                hasMoveModal: false
             }
         );
     });

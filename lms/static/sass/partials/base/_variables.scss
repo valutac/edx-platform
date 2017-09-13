@@ -36,7 +36,7 @@ $fg-gutter: $gw-gutter !default;
 $fg-max-columns: 12 !default;
 $fg-max-width: 1400px !default;
 $fg-min-width: 810px !default;
-
+$lms-max-width: 1180px !default;
 
 // ----------------------------
 // #COLORS
@@ -200,8 +200,8 @@ $ui-notification-height: ($baseline*10);
 $twitter-blue: #55ACEE;
 $facebook-blue: #3B5998;
 $linkedin-blue: #0077B5;
-$google-red: #DD4B39;
-$microsoft-blue: #00BCF2;
+$google-red: #D73924;
+$microsoft-black: #000000;
 
 // shadows
 $shadow: rgba(0,0,0,0.2) !default;
@@ -218,11 +218,40 @@ $active-color: $blue !default;
 $highlight-color: rgb(255,255,0) !default;
 $alert-color: rgb(212, 64, 64) !default;
 $success-color: rgb(0, 155, 0) !default;
+$success-color-hover: rgb(0, 129, 0) !default;
 
+// ----------------------------
+// #COLORS- Bootstrap-style
+// ----------------------------
+$state-success-text: $black !default;
+$state-success-bg: #dff0d8 !default;
+$state-success-border: darken($state-success-bg, 5%) !default;
+
+$state-info-text: $black !default;
+$state-info-bg: #d9edf7 !default;
+$state-info-border: darken($state-info-bg, 7%) !default;
+
+$state-warning-text: $black !default;
+$state-warning-bg: #fcf8e3 !default;
+$state-warning-border: darken($state-warning-bg, 5%) !default;
+
+$state-danger-text: $black !default;
+$state-danger-bg: #f2dede !default;
+$state-danger-border: darken($state-danger-bg, 5%) !default;
 
 // ----------------------------
 // #COLORS- EDX-SPECIFIC
 // ----------------------------
+
+// logo colors
+$audit-mode-color: rgb(74,74,74) !default;
+$honor-mode-color: $uxpl-blue-base !default;
+$verified-mode-color: $uxpl-green-base !default;
+$micromasters-color: #005585 !default;
+$xseries-color: #424242 !default;
+$professional-certificate-color: #9a1f60 !default;
+$zebra-stripe-color: rgb(249, 250, 252) !default;
+$divider-color: rgb(226,231,236) !default;
 
 // old color variables
 // DEPRECATED: Do not continue to use these colors, instead use pattern libary and base colors above.
@@ -326,6 +355,7 @@ $credit-color-base: rgb(244,195,0) !default; // accessible with black text
 $staff-color: $uxpl-pink-base !default;
 
 
+
 // ----------------------------
 // #TYPOGRAPHY
 // ----------------------------
@@ -376,10 +406,12 @@ $form-bg-color: $white !default;
 $body-font-size: em(14) !default;
 $body-line-height: golden-ratio(.875em, 1) !default;
 
+// font colors
 $base-font-color: rgb(60,60,60) !default;
-$baseFontColor: $base-font-color;
-
+$baseFontColor: $base-font-color !default;
+$darkest-base-font-color: $black !default;
 $lighter-base-font-color: rgb(100,100,100) !default;
+$lightest-base-font-color: $gray; // Lightest font that can be used on a white background
 $very-light-text: rgb(255,255,255) !default;
 $text-color: rgb(51, 51, 51) !default;
 
@@ -458,6 +490,7 @@ $container-bg: $white !default;
 // header
 $header-image: linear-gradient(-90deg, rgba(255,255,255, 1), rgba(230,230,230, 0.9)) !default;
 $header-bg: $white !default;
+$header-border-color: $blue !default;
 $header-graphic-super-color: $m-blue-d1 !default;
 $header-graphic-sub-color: $m-gray-d2 !default;
 $header-sans-serif: 'Open Sans', Arial, Helvetica, sans-serif !default;
@@ -504,6 +537,20 @@ $dashboard-profile-header-color: transparent !default;
 $dashboard-profile-color: rgb(252,252,252) !default;
 $dot-color: rgb(221, 221, 221) !default;
 $dashboard-course-cover-border: rgb(221, 221, 221) !default;
+
+// dashboard notification messages
+$palette-info-border: #cce3f0;
+$palette-info-back: #f2f8fb;
+$palette-info-text: #0075b4;
+$palette-error-border: #ebccd1;
+$palette-error-back: #feeced;
+$palette-error-text: #b20610;
+$palette-success-border: #b9edb9;
+$palette-success-back: #ecfaec;
+$palette-success-text: #008100;
+
+// learner profile elements
+$learner-profile-container-flex: 768px;
 
 // course elements
 $content-wrapper-bg: $white !default;

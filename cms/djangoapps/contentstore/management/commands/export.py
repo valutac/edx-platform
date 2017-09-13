@@ -4,12 +4,12 @@ Script for exporting courseware from Mongo to a tar.gz file
 import os
 
 from django.core.management.base import BaseCommand, CommandError
-from xmodule.modulestore.xml_exporter import export_course_to_xml
-from xmodule.modulestore.django import modulestore
-from opaque_keys.edx.keys import CourseKey
-from xmodule.contentstore.django import contentstore
 from opaque_keys import InvalidKeyError
-from opaque_keys.edx.locations import SlashSeparatedCourseKey
+from opaque_keys.edx.keys import CourseKey
+
+from xmodule.contentstore.django import contentstore
+from xmodule.modulestore.django import modulestore
+from xmodule.modulestore.xml_exporter import export_course_to_xml
 
 
 class Command(BaseCommand):
@@ -30,10 +30,7 @@ class Command(BaseCommand):
         try:
             course_key = CourseKey.from_string(options['course_id'])
         except InvalidKeyError:
-            try:
-                course_key = SlashSeparatedCourseKey.from_deprecated_string(options['course_id'])
-            except InvalidKeyError:
-                raise CommandError("Invalid course_key: '%s'." % options['course_id'])
+            raise CommandError("Invalid course_key: '%s'." % options['course_id'])
 
         if not modulestore().get_course(course_key):
             raise CommandError("Course with %s key not found." % options['course_id'])

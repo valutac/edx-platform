@@ -4,13 +4,12 @@ API library for Django REST Framework permissions-oriented workflows
 
 from django.conf import settings
 from django.http import Http404
-from rest_framework import permissions
-
 from opaque_keys import InvalidKeyError
 from opaque_keys.edx.keys import CourseKey
-from student.roles import CourseStaffRole, CourseInstructorRole
+from rest_framework import permissions
 
 from openedx.core.lib.log_utils import audit_log
+from student.roles import CourseInstructorRole, CourseStaffRole
 
 
 class ApiKeyHeaderPermission(permissions.BasePermission):
@@ -118,6 +117,16 @@ class IsMasterCourseStaffInstructor(permissions.BasePermission):
                     (CourseInstructorRole(course_key).has_user(request.user) or
                      CourseStaffRole(course_key).has_user(request.user)))
         return False
+
+
+class IsStaff(permissions.BasePermission):
+    """
+    Permission that checks to see if the request user has is_staff access.
+    """
+
+    def has_permission(self, request, view):
+        if request.user.is_staff:
+            return True
 
 
 class IsUserInUrlOrStaff(IsUserInUrl):

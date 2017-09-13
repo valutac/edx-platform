@@ -12,18 +12,18 @@
 # pylint: disable=unused-argument
 
 # django_url is assigned late in the process of loading lettuce,
+from logging import getLogger
+
 # so we import this as a module, and then read django_url from
 # it to get the correct value
 import lettuce.django
+from lettuce import step, world
+from nose.tools import assert_equals  # pylint: disable=no-name-in-module
+from opaque_keys.edx.keys import CourseKey
 
-from lettuce import world, step
 from .course_helpers import *
 from .ui_helpers import *
-from nose.tools import assert_equals  # pylint: disable=no-name-in-module
 
-from opaque_keys.edx.locations import SlashSeparatedCourseKey
-
-from logging import getLogger
 logger = getLogger(__name__)
 
 
@@ -116,7 +116,7 @@ def i_am_not_logged_in(step):
 
 @step('I am staff for course "([^"]*)"$')
 def i_am_staff_for_course_by_id(step, course_id):
-    course_key = SlashSeparatedCourseKey.from_deprecated_string(course_id)
+    course_key = CourseKey.from_string(course_id)
     world.register_by_course_key(course_key, True)
 
 

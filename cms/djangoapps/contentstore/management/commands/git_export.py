@@ -18,12 +18,11 @@ from optparse import make_option
 
 from django.core.management.base import BaseCommand, CommandError
 from django.utils.translation import ugettext as _
+from opaque_keys import InvalidKeyError
+from opaque_keys.edx.keys import CourseKey
 
 import contentstore.git_export_utils as git_export_utils
-from opaque_keys.edx.locations import SlashSeparatedCourseKey
-from opaque_keys import InvalidKeyError
 from contentstore.git_export_utils import GitExportError
-from opaque_keys.edx.keys import CourseKey
 
 log = logging.getLogger(__name__)
 
@@ -59,10 +58,7 @@ class Command(BaseCommand):
         try:
             course_key = CourseKey.from_string(args[0])
         except InvalidKeyError:
-            try:
-                course_key = SlashSeparatedCourseKey.from_deprecated_string(args[0])
-            except InvalidKeyError:
-                raise CommandError(unicode(GitExportError.BAD_COURSE))
+            raise CommandError(unicode(GitExportError.BAD_COURSE))
 
         try:
             git_export_utils.export_to_git(

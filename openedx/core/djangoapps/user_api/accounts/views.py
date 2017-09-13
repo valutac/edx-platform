@@ -109,6 +109,12 @@ class AccountViewSet(ViewSet):
 
             * requires_parental_consent: True if the user is a minor
               requiring parental consent.
+            * social_links: Array of social links. Each
+              preference is a JSON object with the following keys:
+
+                * "platform": A particular social platform, ex: 'facebook'
+                * "social_link": The link to the user's profile on the particular platform
+
             * username: The username associated with the account.
             * year_of_birth: The year the user was born, as an integer, or null.
             * account_privacy: The user's setting for sharing her personal
@@ -229,6 +235,7 @@ class AccountDeactivationView(APIView):
     Account deactivation viewset. Currently only supports POST requests.
     Only admins can deactivate accounts.
     """
+    authentication_classes = (JwtAuthentication, )
     permission_classes = (permissions.IsAuthenticated, CanDeactivateUser)
 
     def post(self, request, username):

@@ -1,16 +1,19 @@
 from django.conf import settings
-from django.conf.urls import patterns, include, url
-# There is a course creators admin table.
+from django.conf.urls import include, patterns, url
+from django.conf.urls.static import static
+from django.contrib.admin import autodiscover as django_autodiscover
 from ratelimitbackend import admin
 
 from cms.djangoapps.contentstore.views.organization import OrganizationListView
 
-admin.autodiscover()
+
+django_autodiscover()
 
 # Pattern to match a course key or a library key
 COURSELIKE_KEY_PATTERN = r'(?P<course_key_string>({}|{}))'.format(
     r'[^/]+/[^/]+/[^/]+', r'[^/:]+:[^/+]+\+[^/+]+(\+[^/]+)?'
 )
+
 # Pattern to match a library key only
 LIBRARY_KEY_PATTERN = r'(?P<library_key_string>library-v1:[^/+]+\+[^/+]+)'
 
@@ -62,6 +65,12 @@ urlpatterns = patterns(
 
     # Darklang View to change the preview language (or dark language)
     url(r'^update_lang/', include('openedx.core.djangoapps.dark_lang.urls', namespace='dark_lang')),
+
+    # URLs for managing theming
+    url(r'^theming/', include('openedx.core.djangoapps.theming.urls', namespace='theming')),
+
+    # For redirecting to help pages.
+    url(r'^help_token/', include('help_tokens.urls')),
 )
 
 # restful api
@@ -95,7 +104,14 @@ urlpatterns += patterns(
     url(r'^assets/{}/{}?$'.format(settings.COURSE_KEY_PATTERN, settings.ASSET_KEY_PATTERN), 'assets_handler'),
     url(r'^import/{}$'.format(COURSELIKE_KEY_PATTERN), 'import_handler'),
     url(r'^import_status/{}/(?P<filename>.+)$'.format(COURSELIKE_KEY_PATTERN), 'import_status_handler'),
+    # rest api for course import/export
+    url(
+        r'^api/courses/',
+        include('cms.djangoapps.contentstore.api.urls', namespace='courses_api')
+    ),
     url(r'^export/{}$'.format(COURSELIKE_KEY_PATTERN), 'export_handler'),
+    url(r'^export_output/{}$'.format(COURSELIKE_KEY_PATTERN), 'export_output_handler'),
+    url(r'^export_status/{}$'.format(COURSELIKE_KEY_PATTERN), 'export_status_handler'),
     url(r'^xblock/outline/{}$'.format(settings.USAGE_KEY_PATTERN), 'xblock_outline_handler'),
     url(r'^xblock/container/{}$'.format(settings.USAGE_KEY_PATTERN), 'xblock_container_handler'),
     url(r'^xblock/{}/(?P<view_name>[^/]+)$'.format(settings.USAGE_KEY_PATTERN), 'xblock_view_handler'),
@@ -107,6 +123,7 @@ urlpatterns += patterns(
     url(r'^textbooks/{}$'.format(settings.COURSE_KEY_PATTERN), 'textbooks_list_handler'),
     url(r'^textbooks/{}/(?P<textbook_id>\d[^/]*)$'.format(settings.COURSE_KEY_PATTERN), 'textbooks_detail_handler'),
     url(r'^videos/{}(?:/(?P<edx_video_id>[-\w]+))?$'.format(settings.COURSE_KEY_PATTERN), 'videos_handler'),
+    url(r'^video_images/{}(?:/(?P<edx_video_id>[-\w]+))?$'.format(settings.COURSE_KEY_PATTERN), 'video_images_handler'),
     url(r'^video_encodings_download/{}$'.format(settings.COURSE_KEY_PATTERN), 'video_encodings_download'),
     url(r'^group_configurations/{}$'.format(settings.COURSE_KEY_PATTERN), 'group_configurations_list_handler'),
     url(r'^group_configurations/{}/(?P<group_configuration_id>\d+)(/)?(?P<group_id>\d+)?$'.format(
@@ -184,11 +201,22 @@ if settings.DEBUG:
     except ImportError:
         pass
 
+    urlpatterns += static(
+        settings.VIDEO_IMAGE_SETTINGS['STORAGE_KWARGS']['base_url'],
+        document_root=settings.VIDEO_IMAGE_SETTINGS['STORAGE_KWARGS']['location']
+    )
+
 if 'debug_toolbar' in settings.INSTALLED_APPS:
     import debug_toolbar
     urlpatterns += (
         url(r'^__debug__/', include(debug_toolbar.urls)),
     )
+
+# UX reference templates
+urlpatterns += patterns(
+    '',
+    url(r'^template/(?P<template>.+)$', 'openedx.core.djangoapps.debug.views.show_reference_template'),
+)
 
 # Custom error pages
 # These are used by Django to render these error codes. Do not remove.

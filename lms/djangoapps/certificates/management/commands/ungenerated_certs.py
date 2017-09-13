@@ -2,20 +2,18 @@
 Management command to find all students that need certificates for
 courses that have finished, and put their cert requests on the queue.
 """
-import logging
 import datetime
-from pytz import UTC
-from django.core.management.base import BaseCommand, CommandError
-from certificates.models import certificate_status_for_student
-from certificates.api import generate_user_certificates
-from django.contrib.auth.models import User
+import logging
 from optparse import make_option
-from opaque_keys import InvalidKeyError
-from opaque_keys.edx.keys import CourseKey
-from opaque_keys.edx.locations import SlashSeparatedCourseKey
-from xmodule.modulestore.django import modulestore
-from certificates.models import CertificateStatuses
 
+from django.contrib.auth.models import User
+from django.core.management.base import BaseCommand, CommandError
+from opaque_keys.edx.keys import CourseKey
+from pytz import UTC
+
+from certificates.api import generate_user_certificates
+from certificates.models import CertificateStatuses, certificate_status_for_student
+from xmodule.modulestore.django import modulestore
 
 LOGGER = logging.getLogger(__name__)
 
@@ -88,18 +86,7 @@ class Command(BaseCommand):
         STATUS_INTERVAL = 500
 
         if options['course']:
-            # try to parse out the course from the serialized form
-            try:
-                course = CourseKey.from_string(options['course'])
-            except InvalidKeyError:
-                LOGGER.warning(
-                    (
-                        u"Course id %s could not be parsed as a CourseKey; "
-                        u"falling back to SlashSeparatedCourseKey.from_deprecated_string()"
-                    ),
-                    options['course']
-                )
-                course = SlashSeparatedCourseKey.from_deprecated_string(options['course'])
+            course = CourseKey.from_string(options['course'])
             ended_courses = [course]
         else:
             raise CommandError("You must specify a course")

@@ -83,6 +83,7 @@ from xmodule.modulestore import (
 
 from ..exceptions import ItemNotFoundError
 from .caching_descriptor_system import CachingDescriptorSystem
+from xmodule.partitions.partitions_service import PartitionService
 from xmodule.modulestore.split_mongo.mongo_connection import MongoConnection, DuplicateKeyError
 from xmodule.modulestore.split_mongo import BlockKey, CourseEnvelope
 from xmodule.modulestore.store_utilities import DETACHED_XBLOCK_TYPES
@@ -787,7 +788,8 @@ class SplitMongoModuleStore(SplitBulkWriteMixin, ModuleStoreWriteBase):
         if should_cache_items:
             self.cache_items(runtime, block_keys, course_entry.course_key, depth, lazy)
 
-        return [runtime.load_item(block_key, course_entry, **kwargs) for block_key in block_keys]
+        with self.bulk_operations(course_entry.course_key, emit_signals=False):
+            return [runtime.load_item(block_key, course_entry, **kwargs) for block_key in block_keys]
 
     def _get_cache(self, course_version_guid):
         """
@@ -3199,6 +3201,7 @@ class SplitMongoModuleStore(SplitBulkWriteMixin, ModuleStoreWriteBase):
                 new_block.definition,
                 destination_version,
                 raw=True,
+                asides=new_block.asides,
                 block_defaults=new_block.defaults
             )
             # Extend the block's new edit_info with any extra edit_info fields from the source (e.g. original_usage):
@@ -3255,11 +3258,12 @@ class SplitMongoModuleStore(SplitBulkWriteMixin, ModuleStoreWriteBase):
         :param definition_id: the pointer to the content scoped fields
         :param new_id: the structure's version id
         :param raw: true if this block already has all references serialized
+        :param asides: dict information related to the connected xblock asides
         """
         if not raw:
             block_fields = self._serialize_fields(category, block_fields)
         if not asides:
-            asides = []
+            asides = {}
         document = {
             'block_type': category,
             'definition': definition_id,
@@ -3357,6 +3361,9 @@ class SplitMongoModuleStore(SplitBulkWriteMixin, ModuleStoreWriteBase):
         """
         Create the proper runtime for this course
         """
+        services = self.services
+        services["partitions"] = PartitionService(course_entry.course_key)
+
         return CachingDescriptorSystem(
             modulestore=self,
             course_entry=course_entry,
@@ -3368,7 +3375,7 @@ class SplitMongoModuleStore(SplitBulkWriteMixin, ModuleStoreWriteBase):
             mixins=self.xblock_mixins,
             select=self.xblock_select,
             disabled_xblock_types=self.disabled_xblock_types,
-            services=self.services,
+            services=services,
         )
 
     def ensure_indexes(self):

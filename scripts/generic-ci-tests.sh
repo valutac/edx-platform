@@ -68,6 +68,8 @@ function emptyxunit {
 END
 
 }
+PAVER_ARGS="--cov-args='-p' --with-xunitmp -v"
+PARALLEL="--processes=-1"
 case "$TEST_SUITE" in
 
     "quality")
@@ -82,12 +84,14 @@ case "$TEST_SUITE" in
 
         echo "Finding ESLint violations and storing report..."
         paver run_eslint -l $ESLINT_THRESHOLD > eslint.log || { cat eslint.log; EXIT=1; }
+        echo "Finding Stylelint violations and storing report..."
+        paver run_stylelint -l $STYLELINT_THRESHOLD > stylelint.log || { cat stylelint.log; EXIT=1; }
         echo "Running code complexity report (python)."
         paver run_complexity || echo "Unable to calculate code complexity. Ignoring error."
-        echo "Running safe template linter report."
-        paver run_safelint -t $SAFELINT_THRESHOLDS > safelint.log || { cat safelint.log; EXIT=1; }
-        echo "Running safe commit linter report."
-        paver run_safecommit_report > safecommit.log || { cat safecommit.log; EXIT=1; }
+        echo "Running xss linter report."
+        paver run_xsslint -t $XSSLINT_THRESHOLDS > xsslint.log || { cat xsslint.log; EXIT=1; }
+        echo "Running xss commit linter report."
+        paver run_xsscommitlint > xsscommitlint.log || { cat xsscommitlint.log; EXIT=1; }
         # Run quality task. Pass in the 'fail-under' percentage to diff-quality
         echo "Running diff quality."
         paver run_quality -p 100 || EXIT=1
@@ -99,16 +103,15 @@ case "$TEST_SUITE" in
         ;;
 
     "lms-unit")
-        PAVER_ARGS="--with-flaky --processes=-1 --cov-args='-p' -v --with-xunitmp"
         case "$SHARD" in
             "all")
-                paver test_system -s lms $PAVER_ARGS
+                paver test_system -s lms $PAVER_ARGS $PARALLEL 2> lms-tests.log
                 ;;
             [1-3])
-                paver test_system -s lms --attr="shard=$SHARD" $PAVER_ARGS
+                paver test_system -s lms --attr="shard=$SHARD" $PAVER_ARGS $PARALLEL 2> lms-tests.$SHARD.log
                 ;;
             4|"noshard")
-                paver test_system -s lms --attr='!shard' $PAVER_ARGS
+                paver test_system -s lms --attr='!shard' $PAVER_ARGS $PARALLEL 2> lms-tests.4.log
                 ;;
             *)
                 # If no shard is specified, rather than running all tests, create an empty xunit file. This is a
@@ -122,11 +125,11 @@ case "$TEST_SUITE" in
         ;;
 
     "cms-unit")
-        paver test_system -s cms --with-flaky --cov-args="-p" -v --with-xunitmp
+        paver test_system -s cms $PAVER_ARGS 2> cms-tests.log
         ;;
 
     "commonlib-unit")
-        paver test_lib --with-flaky --cov-args="-p" -v --with-xunit
+        paver test_lib $PAVER_ARGS 2> common-tests.log
         ;;
 
     "js-unit")
@@ -136,7 +139,7 @@ case "$TEST_SUITE" in
 
     "commonlib-js-unit")
         paver test_js --coverage --skip-clean || { EXIT=1; }
-        paver test_lib --skip-clean --with-flaky --cov-args="-p" --with-xunitmp || { EXIT=1; }
+        paver test_lib --skip-clean $PAVER_ARGS || { EXIT=1; }
 
         # This is to ensure that the build status of the shard is properly set.
         # Because we are running two paver commands in a row, we need to capture
@@ -162,7 +165,7 @@ case "$TEST_SUITE" in
 
     "bok-choy")
 
-        PAVER_ARGS="-n $NUMBER_OF_BOKCHOY_THREADS --with-flaky --with-xunit"
+        PAVER_ARGS="-n $NUMBER_OF_BOKCHOY_THREADS"
 
         case "$SHARD" in
 
@@ -171,11 +174,11 @@ case "$TEST_SUITE" in
                 ;;
 
             [1-9]|10)
-                paver test_bokchoy --attr="shard=$SHARD" $PAVER_ARGS
+                paver test_bokchoy --eval-attr="shard==$SHARD" $PAVER_ARGS
                 ;;
 
             11|"noshard")
-                paver test_bokchoy --attr='!shard,a11y=False' $PAVER_ARGS
+                paver test_bokchoy --eval-attr='not shard and not a11y' $PAVER_ARGS
                 ;;
 
             # Default case because if we later define another bok-choy shard on Jenkins
@@ -190,7 +193,7 @@ case "$TEST_SUITE" in
                 # May be unnecessary if we changed the "Skip if there are no test files"
                 # option to True in the jenkins job definitions.
                 mkdir -p reports/bok_choy
-                emptyxunit "bok_choy/nosetests"
+                emptyxunit "bok_choy/xunit"
                 ;;
         esac
         ;;

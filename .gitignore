@@ -75,6 +75,10 @@ jscover.log.*
 .tddium*
 common/test/data/test_unicode/static/
 test_root/courses/
+test_root/data/test_bare.git/
+test_root/export_course_repos/
+test_root/paver_logs/
+test_root/uploads/
 django-pyfs
 
 ### Installation artifacts
@@ -91,6 +95,8 @@ lms/static/css/
 lms/static/certificates/css/
 cms/static/css/
 common/static/common/js/vendor/
+common/static/bundles
+webpack-stats.json
 
 ### Styling generated from templates
 lms/static/sass/*.css
@@ -101,8 +107,7 @@ cms/static/css/
 cms/static/sass/*.css
 cms/static/sass/*.css.map
 cms/static/themed_sass/
-themes/**/css/*.css
-themes/**/css/discussion/*.css
+themes/**/css
 
 ### Logging artifacts
 log/
@@ -125,3 +130,6 @@ lms/lib/comment_client/python
 autodeploy.properties
 .ws_migrations_complete
 dist
+
+# Visual Studio Code
+.vscode

@@ -253,10 +253,10 @@ class BookmarkModelTests(BookmarksTestsBase):
 
     @ddt.data(
         (ModuleStoreEnum.Type.mongo, 'course', [], 3),
-        (ModuleStoreEnum.Type.mongo, 'chapter_1', [], 4),
-        (ModuleStoreEnum.Type.mongo, 'sequential_1', ['chapter_1'], 6),
-        (ModuleStoreEnum.Type.mongo, 'vertical_1', ['chapter_1', 'sequential_1'], 8),
-        (ModuleStoreEnum.Type.mongo, 'html_1', ['chapter_1', 'sequential_2', 'vertical_2'], 10),
+        (ModuleStoreEnum.Type.mongo, 'chapter_1', [], 3),
+        (ModuleStoreEnum.Type.mongo, 'sequential_1', ['chapter_1'], 4),
+        (ModuleStoreEnum.Type.mongo, 'vertical_1', ['chapter_1', 'sequential_1'], 6),
+        (ModuleStoreEnum.Type.mongo, 'html_1', ['chapter_1', 'sequential_2', 'vertical_2'], 7),
         (ModuleStoreEnum.Type.split, 'course', [], 3),
         (ModuleStoreEnum.Type.split, 'chapter_1', [], 2),
         (ModuleStoreEnum.Type.split, 'sequential_1', ['chapter_1'], 2),
@@ -430,9 +430,6 @@ class XBlockCacheModelTest(ModuleStoreTestCase):
         [unicode(CHAPTER1_USAGE_KEY), 'Chapter 1'],
         [unicode(SECTION2_USAGE_KEY), 'Section 2'],
     ]
-
-    def setUp(self):
-        super(XBlockCacheModelTest, self).setUp()
 
     def assert_xblock_cache_data(self, xblock_cache, data):
         """

@@ -1,30 +1,28 @@
 """
 Tests for branding page
 """
-
-import mock
 import datetime
 
+import ddt
 from django.conf import settings
 from django.contrib.auth.models import AnonymousUser
+from django.core.urlresolvers import reverse
 from django.http import HttpResponseRedirect
-from django.test.utils import override_settings
 from django.test.client import RequestFactory
-
-from pytz import UTC
-from mock import patch, Mock
+from django.test.utils import override_settings
+from milestones.tests.utils import MilestonesTestCaseMixin
+from mock import Mock, patch
 from nose.plugins.attrib import attr
-from edxmako.shortcuts import render_to_response
+from pytz import UTC
+from waffle.testutils import override_switch
 
 from branding.views import index
+from courseware.tests.helpers import LoginEnrollmentTestCase
+from edxmako.shortcuts import render_to_response
+from openedx.core.djangoapps.site_configuration.tests.mixins import SiteMixin
+from util.milestones_helpers import set_prerequisite_courses
 from xmodule.modulestore.tests.django_utils import ModuleStoreTestCase
 from xmodule.modulestore.tests.factories import CourseFactory
-
-from django.core.urlresolvers import reverse
-from courseware.tests.helpers import LoginEnrollmentTestCase
-
-from util.milestones_helpers import set_prerequisite_courses
-from milestones.tests.utils import MilestonesTestCaseMixin
 
 FEATURES_WITH_STARTDATE = settings.FEATURES.copy()
 FEATURES_WITH_STARTDATE['DISABLE_START_DATES'] = False
@@ -119,6 +117,8 @@ class PreRequisiteCourseCatalog(ModuleStoreTestCase, LoginEnrollmentTestCase, Mi
     Test to simulate and verify fix for disappearing courses in
     course catalog when using pre-requisite courses
     """
+    ENABLED_SIGNALS = ['course_published']
+
     @patch.dict(settings.FEATURES, {'ENABLE_PREREQUISITE_COURSES': True})
     def test_course_with_prereq(self):
         """
@@ -162,6 +162,8 @@ class IndexPageCourseCardsSortingTests(ModuleStoreTestCase):
     """
     Test for Index page course cards sorting
     """
+    ENABLED_SIGNALS = ['course_published']
+
     def setUp(self):
         super(IndexPageCourseCardsSortingTests, self).setUp()
         self.starting_later = CourseFactory.create(
@@ -291,34 +293,17 @@ class IndexPageCourseCardsSortingTests(ModuleStoreTestCase):
 
 
 @attr(shard=1)
-class IndexPageProgramsTests(ModuleStoreTestCase):
+class IndexPageProgramsTests(SiteMixin, ModuleStoreTestCase):
     """
     Tests for Programs List in Marketing Pages.
     """
-    @patch.dict('django.conf.settings.FEATURES', {'DISPLAY_PROGRAMS_ON_MARKETING_PAGES': False})
-    def test_get_programs_not_called(self):
-        with mock.patch("student.views.get_programs_data") as patched_get_programs_data:
-            # check the /dashboard
-            response = self.client.get('/')
-            self.assertEqual(response.status_code, 200)
-            self.assertEqual(patched_get_programs_data.call_count, 0)
-
-        with mock.patch("courseware.views.views.get_programs_data") as patched_get_programs_data:
-            # check the /courses view
-            response = self.client.get(reverse('branding.views.courses'))
-            self.assertEqual(response.status_code, 200)
-            self.assertEqual(patched_get_programs_data.call_count, 0)
-
-    @patch.dict('django.conf.settings.FEATURES', {'DISPLAY_PROGRAMS_ON_MARKETING_PAGES': True})
-    def test_get_programs_called(self):
-        with mock.patch("student.views.get_programs_data") as patched_get_programs_data:
-            # check the /dashboard
-            response = self.client.get('/')
-            self.assertEqual(response.status_code, 200)
-            self.assertEqual(patched_get_programs_data.call_count, 1)
-
-        with mock.patch("courseware.views.views.get_programs_data") as patched_get_programs_data:
-            # check the /courses view
-            response = self.client.get(reverse('branding.views.courses'))
-            self.assertEqual(response.status_code, 200)
-            self.assertEqual(patched_get_programs_data.call_count, 1)
+    def test_get_programs_with_type_called(self):
+        views = [
+            (reverse('root'), 'student.views.get_programs_with_type'),
+            (reverse('branding.views.courses'), 'courseware.views.views.get_programs_with_type'),
+        ]
+        for url, dotted_path in views:
+            with patch(dotted_path) as mock_get_programs_with_type:
+                response = self.client.get(url)
+                self.assertEqual(response.status_code, 200)
+                mock_get_programs_with_type.assert_called_once()

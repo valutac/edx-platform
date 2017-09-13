@@ -12,20 +12,23 @@ from django.db import transaction
 from django.http import HttpResponse, HttpResponseBadRequest
 from django.shortcuts import redirect
 from django.utils.decorators import method_decorator
-from django.utils.translation import get_language, to_locale, ugettext as _
+from django.utils.translation import ugettext as _
+from django.utils.translation import get_language, to_locale
 from django.views.generic.base import View
 from ipware.ip import get_ip
 from opaque_keys.edx.keys import CourseKey
-from opaque_keys.edx.locations import SlashSeparatedCourseKey
-from xmodule.modulestore.django import modulestore
 
-from lms.djangoapps.commerce.utils import EcommerceService
 from course_modes.models import CourseMode
 from courseware.access import has_access
 from edxmako.shortcuts import render_to_response
+from lms.djangoapps.commerce.utils import EcommerceService
+from lms.djangoapps.experiments.utils import get_experiment_user_metadata_context
 from openedx.core.djangoapps.embargo import api as embargo_api
 from student.models import CourseEnrollment
+from third_party_auth.decorators import tpa_hint_ends_existing_session
+from util import organizations_helpers as organization_api
 from util.db import outer_atomic
+from xmodule.modulestore.django import modulestore
 
 
 class ChooseModeView(View):
@@ -50,6 +53,7 @@ class ChooseModeView(View):
         """
         return super(ChooseModeView, self).dispatch(*args, **kwargs)
 
+    @method_decorator(tpa_hint_ends_existing_session)
     @method_decorator(login_required)
     @method_decorator(transaction.atomic)
     def get(self, request, course_id, error=None):
@@ -94,15 +98,13 @@ class ChooseModeView(View):
             if ecommerce_service.is_enabled(request.user):
                 professional_mode = modes.get(CourseMode.NO_ID_PROFESSIONAL_MODE) or modes.get(CourseMode.PROFESSIONAL)
                 if purchase_workflow == "single" and professional_mode.sku:
-                    redirect_url = ecommerce_service.checkout_page_url(professional_mode.sku)
+                    redirect_url = ecommerce_service.get_checkout_page_url(professional_mode.sku)
                 if purchase_workflow == "bulk" and professional_mode.bulk_sku:
-                    redirect_url = ecommerce_service.checkout_page_url(professional_mode.bulk_sku)
+                    redirect_url = ecommerce_service.get_checkout_page_url(professional_mode.bulk_sku)
             return redirect(redirect_url)
 
         # If there isn't a verified mode available, then there's nothing
-        # to do on this page.  The user has almost certainly been auto-registered
-        # in the "honor" track by this point, so we send the user
-        # to the dashboard.
+        # to do on this page.  Send the user to the dashboard.
         if not CourseMode.has_verified_mode(modes):
             return redirect(reverse('dashboard'))
 
@@ -132,11 +134,11 @@ class ChooseModeView(View):
             CourseMode.is_credit_mode(mode) for mode
             in CourseMode.modes_for_course(course_key, only_selectable=False)
         )
-
+        course_id = course_key.to_deprecated_string()
         context = {
             "course_modes_choose_url": reverse(
                 "course_modes_choose",
-                kwargs={'course_id': course_key.to_deprecated_string()}
+                kwargs={'course_id': course_id}
             ),
             "modes": modes,
             "has_credit_upsell": has_credit_upsell,
@@ -148,6 +150,19 @@ class ChooseModeView(View):
             "responsive": True,
             "nav_hidden": True,
         }
+        context.update(
+            get_experiment_user_metadata_context(
+                course,
+                request.user,
+            )
+        )
+
+        title_content = _("Congratulations!  You are now enrolled in {course_name}").format(
+            course_name=course.display_name_with_default_escaped
+        )
+
+        context["title_content"] = title_content
+
         if "verified" in modes:
             verified_mode = modes["verified"]
             context["suggested_prices"] = [
@@ -168,6 +183,7 @@ class ChooseModeView(View):
 
         return render_to_response("course_modes/choose.html", context)
 
+    @method_decorator(tpa_hint_ends_existing_session)
     @method_decorator(transaction.non_atomic_requests)
     @method_decorator(login_required)
     @method_decorator(outer_atomic(read_committed=True))
@@ -185,7 +201,7 @@ class ChooseModeView(View):
             below the minimum, otherwise redirects to the verification flow.
 
         """
-        course_key = SlashSeparatedCourseKey.from_deprecated_string(course_id)
+        course_key = CourseKey.from_string(course_id)
         user = request.user
 
         # This is a bit redundant with logic in student.views.change_enrollment,
@@ -202,9 +218,12 @@ class ChooseModeView(View):
             return HttpResponseBadRequest(_("Enrollment mode not supported"))
 
         if requested_mode == 'audit':
-            # The user will have already been enrolled in the audit mode at this
-            # point, so we just redirect them to the dashboard, thereby avoiding
-            # hitting the database a second time attempting to enroll them.
+            # If the learner has arrived at this screen via the traditional enrollment workflow,
+            # then they should already be enrolled in an audit mode for the course, assuming one has
+            # been configured.  However, alternative enrollment workflows have been introduced into the
+            # system, such as third-party discovery.  These workflows result in learners arriving
+            # directly at this screen, and they will not necessarily be pre-enrolled in the audit mode.
+            CourseEnrollment.enroll(request.user, course_key, CourseMode.AUDIT)
             return redirect(reverse('dashboard'))
 
         if requested_mode == 'honor':

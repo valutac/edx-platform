@@ -1,19 +1,18 @@
 """
 Helpers for accessing comprehensive theming related variables.
 """
-import re
 import os
-from path import Path
+import re
+from logging import getLogger
 
-from django.conf import settings, ImproperlyConfigured
+from django.conf import ImproperlyConfigured, settings
 from django.contrib.staticfiles.storage import staticfiles_storage
-
-from request_cache.middleware import RequestCache
+from path import Path
 
 from microsite_configuration import microsite
 from openedx.core.djangoapps.site_configuration import helpers as configuration_helpers
+from request_cache.middleware import RequestCache
 
-from logging import getLogger
 logger = getLogger(__name__)  # pylint: disable=invalid-name
 
 
@@ -365,6 +364,16 @@ def get_themes(themes_dir=None):
         themes.extend([Theme(name, name, themes_dir) for name in get_theme_dirs(themes_dir)])
 
     return themes
+
+
+def theme_exists(theme_name, themes_dir=None):
+    """
+    Returns True if a theme exists with the specified name.
+    """
+    for theme in get_themes(themes_dir=themes_dir):
+        if theme.theme_dir_name == theme_name:
+            return True
+    return False
 
 
 def get_theme_dirs(themes_dir=None):

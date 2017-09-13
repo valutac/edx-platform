@@ -3,13 +3,14 @@
     define([
         'gettext', 'jquery', 'underscore', 'backbone',
         'edx-ui-toolkit/js/utils/html-utils',
+        'edx-ui-toolkit/js/utils/date-utils',
         'text!templates/fields/field_readonly.underscore',
         'text!templates/fields/field_dropdown.underscore',
         'text!templates/fields/field_link.underscore',
         'text!templates/fields/field_text.underscore',
         'text!templates/fields/field_textarea.underscore',
         'backbone-super'
-    ], function(gettext, $, _, Backbone, HtmlUtils,
+    ], function(gettext, $, _, Backbone, HtmlUtils, DateUtils,
                  field_readonly_template,
                  field_dropdown_template,
                  field_link_template,
@@ -313,6 +314,38 @@
             }
         });
 
+        FieldViews.DateFieldView = FieldViews.ReadonlyFieldView.extend({
+
+            fieldType: 'date',
+
+            timezoneFormattedDate: function() {
+                var context;
+                context = {
+                    datetime: new Date(this.modelValue()),
+                    language: this.options.userLanguage,
+                    timezone: this.options.userTimezone,
+                    format: this.options.dateFormat
+                };
+                return DateUtils.localize(context);
+            },
+
+            render: function() {
+                HtmlUtils.setHtml(this.$el, HtmlUtils.template(this.fieldTemplate)({
+                    id: this.options.valueAttribute,
+                    title: this.options.title,
+                    screenReaderTitle: this.options.screenReaderTitle || this.options.title,
+                    value: this.timezoneFormattedDate(),
+                    message: this.helpMessage
+                }));
+                this.delegateEvents();
+                return this;
+            },
+
+            updateValueInField: function() {
+                this.$('.u-field-value ').text(this.timezoneFormattedDate());
+            }
+        });
+
         FieldViews.TextFieldView = FieldViews.EditableFieldView.extend({
 
             fieldType: 'text',
@@ -334,7 +367,8 @@
                     id: this.options.valueAttribute,
                     title: this.options.title,
                     value: this.modelValue(),
-                    message: this.helpMessage
+                    message: this.helpMessage,
+                    placeholder: this.options.placeholder || ''
                 }));
                 this.delegateEvents();
                 return this;
@@ -364,7 +398,6 @@
 
             events: {
                 'click': 'startEditing',
-                'change select': 'finishEditing',
                 'focusout select': 'finishEditing'
             },
 
@@ -516,15 +549,16 @@
                 'click .wrapper-u-field': 'startEditing',
                 'click .u-field-placeholder': 'startEditing',
                 'focusout textarea': 'finishEditing',
-                'change textarea': 'adjustTextareaHeight',
-                'keyup textarea': 'adjustTextareaHeight',
+                'change textarea': 'manageTextareaContentChange',
+                'keyup textarea': 'manageTextareaContentChange',
                 'keydown textarea': 'onKeyDown',
-                'paste textarea': 'adjustTextareaHeight',
-                'cut textarea': 'adjustTextareaHeight'
+                'paste textarea': 'manageTextareaContentChange',
+                'cut textarea': 'manageTextareaContentChange'
             },
 
             initialize: function(options) {
-                _.bindAll(this, 'render', 'onKeyDown', 'adjustTextareaHeight', 'fieldValue', 'saveValue', 'updateView');
+                _.bindAll(this, 'render', 'onKeyDown', 'adjustTextareaHeight', 'manageTextareaContentChange',
+                    'fieldValue', 'saveValue', 'updateView');
                 this._super(options);
                 this.listenTo(this.model, 'change:' + this.options.valueAttribute, this.updateView);
             },
@@ -542,7 +576,8 @@
                     value: value,
                     message: this.helpMessage,
                     messagePosition: this.options.messagePosition || 'footer',
-                    placeholderValue: this.options.placeholderValue
+                    placeholderValue: this.options.placeholderValue,
+                    maxCharacters: this.options.maxCharacters || ''
                 }));
                 this.delegateEvents();
                 this.title((this.modelValue() || this.mode === 'edit') ?
@@ -563,10 +598,24 @@
                 }
             },
 
+            updateCharCount: function() {
+                var curCharCount;
+                // Update character count for textarea
+                if (this.options.maxCharacters) {
+                    curCharCount = $('#u-field-textarea-' + this.options.valueAttribute).val().length;
+                    $('.u-field-footer .current-char-count').text(curCharCount);
+                }
+            },
+
             adjustTextareaHeight: function() {
                 if (this.persistChanges === false) { return; }
                 var textarea = this.$('textarea');
                 textarea.css('height', 'auto').css('height', textarea.prop('scrollHeight') + 10);
+            },
+
+            manageTextareaContentChange: function() {
+                this.updateCharCount();
+                this.adjustTextareaHeight();
             },
 
             modelValue: function() {

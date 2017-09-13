@@ -3,13 +3,15 @@ Tests for views/tools.py.
 """
 
 import datetime
-import mock
 import json
 import unittest
 
-from django.utils.timezone import utc
+import mock
+from django.test import TestCase
 from django.test.utils import override_settings
+from django.utils.timezone import utc
 from nose.plugins.attrib import attr
+from opaque_keys.edx.keys import CourseKey
 
 from courseware.field_overrides import OverrideFieldData
 from lms.djangoapps.ccx.tests.test_overrides import inject_field_overrides
@@ -17,7 +19,6 @@ from student.tests.factories import UserFactory
 from xmodule.fields import Date
 from xmodule.modulestore.tests.django_utils import ModuleStoreTestCase, SharedModuleStoreTestCase
 from xmodule.modulestore.tests.factories import CourseFactory, ItemFactory
-from opaque_keys.edx.keys import CourseKey
 
 from ..views import tools
 
@@ -65,7 +66,7 @@ class TestHandleDashboardError(unittest.TestCase):
 
 
 @attr(shard=1)
-class TestRequireStudentIdentifier(unittest.TestCase):
+class TestRequireStudentIdentifier(TestCase):
     """
     Test require_student_from_identifier()
     """

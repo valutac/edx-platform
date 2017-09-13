@@ -43,7 +43,8 @@ from openedx.core.djangolib.markup import HTML, Text
             "${action | n, js_escaped_string}",
             {
                 isUnitPage: ${is_unit_page | n, dump_js_escaped_json},
-                canEdit: true
+                canEdit: true,
+                outlineURL: "${outline_url | n, js_escaped_string}"
             }
         );
     });
@@ -70,6 +71,8 @@ from openedx.core.djangolib.markup import HTML, Text
             <div class="wrapper-xblock-field incontext-editor is-editable"
                  data-field="display_name" data-field-display-name="${_("Display Name")}">
                 <h1 class="page-header-title xblock-field-value incontext-editor-value"><span class="title-value">${xblock.display_name_with_default}</span></h1>
+            </div>
+            <div class="container-access">
             </div>
         </div>
 
