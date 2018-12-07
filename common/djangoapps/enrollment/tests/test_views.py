@@ -11,12 +11,12 @@ import httpretty
 import pytz
 from django.conf import settings
 from django.core.cache import cache
+from django.core.exceptions import ImproperlyConfigured
 from django.core.handlers.wsgi import WSGIRequest
-from django.core.urlresolvers import reverse
+from django.urls import reverse
 from django.test import Client
 from django.test.utils import override_settings
 from mock import patch
-from nose.plugins.attrib import attr
 from rest_framework import status
 from rest_framework.test import APITestCase
 from xmodule.modulestore.tests.django_utils import ModuleStoreTestCase
@@ -28,14 +28,21 @@ from enrollment import api
 from enrollment.errors import CourseEnrollmentError
 from enrollment.views import EnrollmentUserThrottle
 from openedx.core.djangoapps.content.course_overviews.models import CourseOverview
+from openedx.core.djangoapps.course_groups import cohorts
 from openedx.core.djangoapps.embargo.models import Country, CountryAccessRule, RestrictedCourse
 from openedx.core.djangoapps.embargo.test_utils import restrict_course
-from openedx.core.djangoapps.user_api.models import UserOrgTag
+from openedx.core.djangoapps.oauth_dispatch.jwt import create_jwt_for_user
+from openedx.core.djangoapps.user_api.models import (
+    RetirementState,
+    UserRetirementStatus,
+    UserOrgTag
+)
 from openedx.core.lib.django_test_client_utils import get_absolute_url
+from openedx.features.enterprise_support.tests import FAKE_ENTERPRISE_CUSTOMER
 from openedx.features.enterprise_support.tests.mixins.enterprise import EnterpriseServiceMockMixin
 from student.models import CourseEnrollment
 from student.roles import CourseStaffRole
-from student.tests.factories import AdminFactory, UserFactory
+from student.tests.factories import AdminFactory, UserFactory, SuperuserFactory
 from util.models import RateLimitConfiguration
 from util.testing import UrlResetMixin
 
@@ -56,8 +63,8 @@ class EnrollmentTestMixin(object):
             enrollment_attributes=None,
             min_mongo_calls=0,
             max_mongo_calls=0,
-            enterprise_course_consent=None,
             linked_enterprise_customer=None,
+            cohort=None,
     ):
         """
         Enroll in the course and verify the response's status code. If the expected status is 200, also validates
@@ -84,11 +91,11 @@ class EnrollmentTestMixin(object):
         if email_opt_in is not None:
             data['email_opt_in'] = email_opt_in
 
-        if enterprise_course_consent is not None:
-            data['enterprise_course_consent'] = enterprise_course_consent
-
         if linked_enterprise_customer is not None:
             data['linked_enterprise_customer'] = linked_enterprise_customer
+
+        if cohort is not None:
+            data['cohort'] = cohort
 
         extra = {}
         if as_server:
@@ -136,8 +143,12 @@ class EnrollmentTestMixin(object):
         self.assertEqual(actual_activation, expected_activation)
         self.assertEqual(actual_mode, expected_mode)
 
+    def _get_enrollments(self):
+        """Retrieve the enrollment list for the current user. """
+        resp = self.client.get(reverse("courseenrollments"))
+        return json.loads(resp.content)
 
-@attr(shard=3)
+
 @override_settings(EDX_API_KEY="i am a key")
 @ddt.ddt
 @unittest.skipUnless(settings.ROOT_URLCONF == 'lms.urls', 'Test only valid in lms')
@@ -145,6 +156,7 @@ class EnrollmentTest(EnrollmentTestMixin, ModuleStoreTestCase, APITestCase, Ente
     """
     Test user enrollment, especially with different course modes.
     """
+    shard = 3
     USERNAME = "Bob"
     EMAIL = "bob@example.com"
     PASSWORD = "edx"
@@ -167,7 +179,7 @@ class EnrollmentTest(EnrollmentTestMixin, ModuleStoreTestCase, APITestCase, Ente
         self.rate_limit, __ = throttle.parse_rate(throttle.rate)
 
         # Pass emit_signals when creating the course so it would be cached
-        # as a CourseOverview.
+        # as a CourseOverview. Enrollments require a cached CourseOverview.
         self.course = CourseFactory.create(emit_signals=True)
 
         self.user = UserFactory.create(
@@ -458,9 +470,9 @@ class EnrollmentTest(EnrollmentTestMixin, ModuleStoreTestCase, APITestCase, Ente
         # enforced at the data layer, so we need to handle the case
         # in which no dates are specified.
         (None, None, None, None),
-        (datetime.datetime(2015, 1, 2, 3, 4, 5), None, "2015-01-02T03:04:05Z", None),
-        (None, datetime.datetime(2015, 1, 2, 3, 4, 5), None, "2015-01-02T03:04:05Z"),
-        (datetime.datetime(2014, 6, 7, 8, 9, 10), datetime.datetime(2015, 1, 2, 3, 4, 5), "2014-06-07T08:09:10Z", "2015-01-02T03:04:05Z"),
+        (datetime.datetime(2015, 1, 2, 3, 4, 5, tzinfo=pytz.UTC), None, "2015-01-02T03:04:05Z", None),
+        (None, datetime.datetime(2015, 1, 2, 3, 4, 5, tzinfo=pytz.UTC), None, "2015-01-02T03:04:05Z"),
+        (datetime.datetime(2014, 6, 7, 8, 9, 10, tzinfo=pytz.UTC), datetime.datetime(2015, 1, 2, 3, 4, 5, tzinfo=pytz.UTC), "2014-06-07T08:09:10Z", "2015-01-02T03:04:05Z"),
     )
     @ddt.unpack
     def test_get_course_details_course_dates(self, start_datetime, end_datetime, expected_start, expected_end):
@@ -548,48 +560,44 @@ class EnrollmentTest(EnrollmentTestMixin, ModuleStoreTestCase, APITestCase, Ente
             mode_display_name=CourseMode.DEFAULT_MODE_SLUG,
         )
 
-        for attempt in xrange(self.rate_limit + 10):
+        for attempt in xrange(self.rate_limit + 2):
             expected_status = status.HTTP_429_TOO_MANY_REQUESTS if attempt >= self.rate_limit else status.HTTP_200_OK
             self.assert_enrollment_status(expected_status=expected_status)
 
-    def test_enrollment_throttle_for_staff_user(self):
-        """ Make sure throttle rate is higher for staff users """
+    @ddt.data('staff', 'user')
+    def test_enrollment_throttle_is_set_correctly(self, user_scope):
+        """ Make sure throttle rate is set correctly for different user scopes. """
         self.rate_limit_config.enabled = True
         self.rate_limit_config.save()
-        self.client.logout()
-        staff_user = UserFactory.create(password=self.PASSWORD, is_staff=True)
-        self.client.login(username=staff_user.username, password=self.PASSWORD)
-
-        CourseModeFactory(
-            course_id=self.course.id,
-            mode_slug=CourseMode.DEFAULT_MODE_SLUG,
-            mode_display_name=CourseMode.DEFAULT_MODE_SLUG,
-        )
 
         throttle = EnrollmentUserThrottle()
-        throttle.scope = 'staff'
-        rate_limit, __ = throttle.parse_rate(throttle.get_rate())
+        throttle.scope = user_scope
+        try:
+            throttle.parse_rate(throttle.get_rate())
+        except ImproperlyConfigured:
+            self.fail("No throttle rate set for {}".format(user_scope))
 
-        # Make enough requests to reach the rate limit
-        for attempt in xrange(rate_limit):
-            self.assert_enrollment_status(username=staff_user.username, expected_status=status.HTTP_200_OK)
+    def test_create_enrollment_with_cohort(self):
+        """Enroll in the course, and also add to a cohort."""
+        # Create a cohort
+        cohort_name = 'masters'
+        cohorts.set_course_cohorted(self.course.id, True)
+        cohorts.add_cohort(self.course.id, cohort_name, 'test')
+        # Create an enrollment
 
-        # Once the limit is reached, subsequent requests should fail
-        for attempt in xrange(rate_limit + 10):
-            self.assert_enrollment_status(username=staff_user.username, expected_status=status. HTTP_429_TOO_MANY_REQUESTS)
+        self.assert_enrollment_status(cohort=cohort_name)
+        self.assertTrue(CourseEnrollment.is_enrolled(self.user, self.course.id))
+        course_mode, is_active = CourseEnrollment.enrollment_mode_for_user(self.user, self.course.id)
+        self.assertTrue(is_active)
+        self.assertEqual(cohorts.get_cohort(self.user, self.course.id, assign=False).name, cohort_name)
 
-    def test_enrollment_throttle_for_service(self):
-        """Make sure a service can call the enrollment API as many times as needed. """
-        self.rate_limit_config.enabled = True
-        self.rate_limit_config.save()
-        CourseModeFactory.create(
-            course_id=self.course.id,
-            mode_slug=CourseMode.DEFAULT_MODE_SLUG,
-            mode_display_name=CourseMode.DEFAULT_MODE_SLUG,
-        )
-
-        for __ in xrange(self.rate_limit + 10):
-            self.assert_enrollment_status(as_server=True)
+    def test_create_enrollment_with_wrong_cohort(self):
+        """Enroll in the course, and also add to a cohort."""
+        # Create a cohort
+        cohorts.set_course_cohorted(self.course.id, True)
+        cohorts.add_cohort(self.course.id, 'masters', 'test')
+        # Create an enrollment
+        self.assert_enrollment_status(cohort='missing', expected_status=status.HTTP_400_BAD_REQUEST)
 
     def test_create_enrollment_with_mode(self):
         """With the right API key, create a new enrollment with a mode set other than the default."""
@@ -622,7 +630,7 @@ class EnrollmentTest(EnrollmentTestMixin, ModuleStoreTestCase, APITestCase, Ente
             course_id=self.course.id,
             mode_slug=CourseMode.VERIFIED,
             mode_display_name=CourseMode.VERIFIED,
-            expiration_datetime='1970-01-01 05:00:00'
+            expiration_datetime='1970-01-01 05:00:00Z'
         )
 
         # Passes the include_expired parameter to the API call
@@ -966,86 +974,11 @@ class EnrollmentTest(EnrollmentTestMixin, ModuleStoreTestCase, APITestCase, Ente
         self.assertTrue(is_active)
         self.assertEqual(course_mode, updated_mode)
 
-    @override_settings(ENTERPRISE_SERVICE_WORKER_USERNAME='enterprise_worker')
-    @override_settings(ENABLE_ENTERPRISE_INTEGRATION=True)
-    def test_enterprise_course_enrollment_invalid_consent(self):
-        """Verify that the enterprise_course_consent must be a boolean. """
-        UserFactory.create(
-            username='enterprise_worker',
-            email=self.EMAIL,
-            password=self.PASSWORD,
-        )
-        CourseModeFactory.create(
-            course_id=self.course.id,
-            mode_slug=CourseMode.DEFAULT_MODE_SLUG,
-            mode_display_name=CourseMode.DEFAULT_MODE_SLUG,
-        )
-        self.assert_enrollment_status(
-            expected_status=status.HTTP_400_BAD_REQUEST,
-            enterprise_course_consent='invalid',
-            as_server=True,
-        )
-
     @httpretty.activate
-    @override_settings(ENTERPRISE_SERVICE_WORKER_USERNAME='enterprise_worker')
-    @override_settings(ENABLE_ENTERPRISE_INTEGRATION=True)
-    def test_enterprise_course_enrollment_api_error(self):
-        """Verify that enterprise service errors are handled properly. """
-        UserFactory.create(
-            username='enterprise_worker',
-            email=self.EMAIL,
-            password=self.PASSWORD,
-        )
-        CourseModeFactory.create(
-            course_id=self.course.id,
-            mode_slug=CourseMode.DEFAULT_MODE_SLUG,
-            mode_display_name=CourseMode.DEFAULT_MODE_SLUG,
-        )
-        self.mock_enterprise_course_enrollment_post_api_failure()
-        self.assert_enrollment_status(
-            expected_status=status.HTTP_400_BAD_REQUEST,
-            enterprise_course_consent=True,
-            as_server=True,
-            username='enterprise_worker'
-        )
-        self.assertEqual(
-            httpretty.last_request().path,
-            '/enterprise/api/v1/enterprise-course-enrollment/',
-            'No request was made to the mocked enterprise-course-enrollment API'
-        )
-
-    @httpretty.activate
-    @override_settings(ENTERPRISE_SERVICE_WORKER_USERNAME='enterprise_worker')
-    @override_settings(ENABLE_ENTERPRISE_INTEGRATION=True)
-    def test_enterprise_course_enrollment_successful(self):
-        """Verify that the enrollment completes when the EnterpriseCourseEnrollment creation succeeds. """
-        UserFactory.create(
-            username='enterprise_worker',
-            email=self.EMAIL,
-            password=self.PASSWORD,
-        )
-        CourseModeFactory.create(
-            course_id=self.course.id,
-            mode_slug=CourseMode.DEFAULT_MODE_SLUG,
-            mode_display_name=CourseMode.DEFAULT_MODE_SLUG,
-        )
-        self.mock_enterprise_course_enrollment_post_api(username=self.user.username, course_id=unicode(self.course.id))
-        self.assert_enrollment_status(
-            expected_status=status.HTTP_200_OK,
-            enterprise_course_consent=True,
-            as_server=True,
-            username='enterprise_worker'
-        )
-        self.assertEqual(
-            httpretty.last_request().path,
-            '/enterprise/api/v1/enterprise-course-enrollment/',
-            'No request was made to the mocked enterprise-course-enrollment API'
-        )
-
-    @httpretty.activate
-    @override_settings(ENTERPRISE_SERVICE_WORKER_USERNAME='enterprise_worker')
-    @override_settings(ENABLE_ENTERPRISE_INTEGRATION=True)
-    def test_enterprise_course_enrollment_with_ec_uuid(self):
+    @override_settings(ENTERPRISE_SERVICE_WORKER_USERNAME='enterprise_worker',
+                       FEATURES=dict(ENABLE_ENTERPRISE_INTEGRATION=True))
+    @patch('openedx.features.enterprise_support.api.enterprise_customer_from_api')
+    def test_enterprise_course_enrollment_with_ec_uuid(self, mock_enterprise_customer_from_api):
         """Verify that the enrollment completes when the EnterpriseCourseEnrollment creation succeeds. """
         UserFactory.create(
             username='enterprise_worker',
@@ -1062,6 +995,7 @@ class EnrollmentTest(EnrollmentTestMixin, ModuleStoreTestCase, APITestCase, Ente
             'course_id': unicode(self.course.id),
             'ec_uuid': 'this-is-a-real-uuid'
         }
+        mock_enterprise_customer_from_api.return_value = FAKE_ENTERPRISE_CUSTOMER
         self.mock_enterprise_course_enrollment_post_api()
         self.mock_consent_missing(**consent_kwargs)
         self.mock_consent_post(**consent_kwargs)
@@ -1122,6 +1056,23 @@ class EnrollmentTest(EnrollmentTestMixin, ModuleStoreTestCase, APITestCase, Ente
         self.assert_enrollment_status(
             as_server=True,
             mode=mode,
+            enrollment_attributes=enrollment_attributes
+        )
+        enrollment.refresh_from_db()
+        self.assertTrue(enrollment.is_active)
+        self.assertEqual(enrollment.mode, mode)
+        self.assertEqual(enrollment.attributes.get(namespace='order', name='order_number').value, order_number)
+
+        # Updating an enrollment should update attributes (for audit mode enrollments also)
+        order_number = 'EDX-3000'
+        enrollment_attributes = [{
+            'namespace': 'order',
+            'name': 'order_number',
+            'value': order_number,
+        }]
+        self.assert_enrollment_status(
+            as_server=True,
+            mode='audit',
             enrollment_attributes=enrollment_attributes
         )
         enrollment.refresh_from_db()
@@ -1241,11 +1192,6 @@ class EnrollmentEmbargoTest(EnrollmentTestMixin, UrlResetMixin, ModuleStoreTestC
         # Verify that we were enrolled
         self.assertEqual(len(self._get_enrollments()), 1)
 
-    def _get_enrollments(self):
-        """Retrieve the enrollment list for the current user. """
-        resp = self.client.get(self.url)
-        return json.loads(resp.content)
-
 
 def cross_domain_config(func):
     """Decorator for configuring a cross-domain request. """
@@ -1323,3 +1269,147 @@ class EnrollmentCrossDomainTest(ModuleStoreTestCase):
             HTTP_REFERER=self.REFERER,
             HTTP_X_CSRFTOKEN=csrf_cookie
         )
+
+
+@ddt.ddt
+@unittest.skipUnless(settings.ROOT_URLCONF == 'lms.urls', 'Test only valid in lms')
+class UnenrollmentTest(EnrollmentTestMixin, ModuleStoreTestCase):
+    """
+    Tests unenrollment functionality. The API being tested is intended to
+    unenroll a learner from all of their courses.g
+    """
+    USERNAME = "Bob"
+    EMAIL = "bob@example.com"
+    PASSWORD = "edx"
+
+    ENABLED_CACHES = ['default', 'mongo_metadata_inheritance', 'loc_cache']
+    ENABLED_SIGNALS = ['course_published']
+
+    def setUp(self):
+        """ Create a course and user, then log in. """
+        super(UnenrollmentTest, self).setUp()
+        self.superuser = SuperuserFactory()
+        # Pass emit_signals when creating the course so it would be cached
+        # as a CourseOverview. Enrollments require a cached CourseOverview.
+        self.first_org_course = CourseFactory.create(emit_signals=True, org="org", course="course", run="run")
+        self.other_first_org_course = CourseFactory.create(emit_signals=True, org="org", course="course2", run="run2")
+        self.second_org_course = CourseFactory.create(emit_signals=True, org="org2", course="course3", run="run3")
+        self.third_org_course = CourseFactory.create(emit_signals=True, org="org3", course="course4", run="run4")
+
+        self.courses = [
+            self.first_org_course, self.other_first_org_course, self.second_org_course, self.third_org_course
+        ]
+
+        self.orgs = {"org", "org2", "org3"}
+
+        for course in self.courses:
+            CourseModeFactory.create(
+                course_id=str(course.id),
+                mode_slug=CourseMode.DEFAULT_MODE_SLUG,
+                mode_display_name=CourseMode.DEFAULT_MODE,
+            )
+
+        self.user = UserFactory.create(
+            username=self.USERNAME,
+            email=self.EMAIL,
+            password=self.PASSWORD,
+        )
+        self.client.login(username=self.USERNAME, password=self.PASSWORD)
+        for course in self.courses:
+            self.assert_enrollment_status(course_id=str(course.id), username=self.USERNAME, is_active=True)
+
+    def _create_test_retirement(self, user=None):
+        """
+        Helper method to create a RetirementStatus with useful defaults
+        """
+        pending_state = RetirementState.objects.create(
+            state_name='PENDING',
+            state_execution_order=1,
+            is_dead_end_state=False,
+            required=False
+        )
+        if user is None:
+            user = UserFactory()
+        return UserRetirementStatus.create_retirement(user)
+
+    def build_jwt_headers(self, user):
+        """
+        Helper function for creating headers for the JWT authentication.
+        """
+        token = create_jwt_for_user(user)
+        headers = {'HTTP_AUTHORIZATION': 'JWT ' + token}
+
+        return headers
+
+    def test_deactivate_enrollments(self):
+        self._assert_active()
+        self._create_test_retirement(self.user)
+        response = self._submit_unenroll(self.superuser, self.user.username)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = json.loads(response.content)
+        # order doesn't matter so compare sets
+        self.assertEqual(set(data), self.orgs)
+        self._assert_inactive()
+
+    def test_deactivate_enrollments_no_retirement_status(self):
+        self._assert_active()
+        response = self._submit_unenroll(self.superuser, self.user.username)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_deactivate_enrollments_unauthorized(self):
+        self._assert_active()
+        response = self._submit_unenroll(self.user, self.user.username)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self._assert_active()
+
+    def test_deactivate_enrollments_no_username(self):
+        self._assert_active()
+        response = self._submit_unenroll(self.superuser, None)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        data = json.loads(response.content)
+        self.assertEqual(data, u"Username not specified.")
+        self._assert_active()
+
+    def test_deactivate_enrollments_empty_username(self):
+        self._assert_active()
+        self._create_test_retirement(self.user)
+        response = self._submit_unenroll(self.superuser, "")
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self._assert_active()
+
+    def test_deactivate_enrollments_invalid_username(self):
+        self._assert_active()
+        self._create_test_retirement(self.user)
+        response = self._submit_unenroll(self.superuser, "a made up username")
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self._assert_active()
+
+    def test_deactivate_enrollments_called_twice(self):
+        self._assert_active()
+        self._create_test_retirement(self.user)
+        response = self._submit_unenroll(self.superuser, self.user.username)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        response = self._submit_unenroll(self.superuser, self.user.username)
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertEqual(response.content, "")
+        self._assert_inactive()
+
+    def _assert_active(self):
+        for course in self.courses:
+            self.assertTrue(CourseEnrollment.is_enrolled(self.user, course.id))
+            _, is_active = CourseEnrollment.enrollment_mode_for_user(self.user, course.id)
+            self.assertTrue(is_active)
+
+    def _assert_inactive(self):
+        for course in self.courses:
+            _, is_active = CourseEnrollment.enrollment_mode_for_user(self.user, course.id)
+            self.assertFalse(is_active)
+
+    def _submit_unenroll(self, submitting_user, unenrolling_username):
+        data = {}
+        if unenrolling_username is not None:
+            data['username'] = unenrolling_username
+
+        url = reverse('unenrollment')
+        headers = self.build_jwt_headers(submitting_user)
+        return self.client.post(url, json.dumps(data), content_type='application/json', **headers)

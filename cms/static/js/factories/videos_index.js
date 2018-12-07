@@ -10,19 +10,28 @@ define([
         encodingsDownloadUrl,
         defaultVideoImageURL,
         concurrentUploadLimit,
-        uploadButton,
+        courseVideoSettingsButton,
         previousUploads,
         videoSupportedFileFormats,
         videoUploadMaxFileSizeInGB,
-        videoImageSettings
+        activeTranscriptPreferences,
+        transcriptOrganizationCredentials,
+        videoTranscriptSettings,
+        isVideoTranscriptEnabled,
+        videoImageSettings,
+        transcriptAvailableLanguages
     ) {
         var activeView = new ActiveVideoUploadListView({
                 postUrl: videoHandlerUrl,
                 concurrentUploadLimit: concurrentUploadLimit,
-                uploadButton: uploadButton,
+                courseVideoSettingsButton: courseVideoSettingsButton,
                 videoSupportedFileFormats: videoSupportedFileFormats,
                 videoUploadMaxFileSizeInGB: videoUploadMaxFileSizeInGB,
                 videoImageSettings: videoImageSettings,
+                activeTranscriptPreferences: activeTranscriptPreferences,
+                transcriptOrganizationCredentials: transcriptOrganizationCredentials,
+                videoTranscriptSettings: videoTranscriptSettings,
+                isVideoTranscriptEnabled: isVideoTranscriptEnabled,
                 onFileUploadDone: function(activeVideos) {
                     $.ajax({
                         url: videoHandlerUrl,
@@ -43,7 +52,10 @@ define([
                                 videoHandlerUrl: videoHandlerUrl,
                                 collection: updatedCollection,
                                 encodingsDownloadUrl: encodingsDownloadUrl,
-                                videoImageSettings: videoImageSettings
+                                videoImageSettings: videoImageSettings,
+                                videoTranscriptSettings: videoTranscriptSettings,
+                                transcriptAvailableLanguages: transcriptAvailableLanguages,
+                                videoSupportedFileFormats: videoSupportedFileFormats
                             });
                         $contentWrapper.find('.wrapper-assets').replaceWith(updatedView.render().$el);
                     });
@@ -55,7 +67,10 @@ define([
                 videoHandlerUrl: videoHandlerUrl,
                 collection: new Backbone.Collection(previousUploads),
                 encodingsDownloadUrl: encodingsDownloadUrl,
-                videoImageSettings: videoImageSettings
+                videoImageSettings: videoImageSettings,
+                videoTranscriptSettings: videoTranscriptSettings,
+                transcriptAvailableLanguages: transcriptAvailableLanguages,
+                videoSupportedFileFormats: videoSupportedFileFormats
             });
         $contentWrapper.append(activeView.render().$el);
         $contentWrapper.append(previousView.render().$el);

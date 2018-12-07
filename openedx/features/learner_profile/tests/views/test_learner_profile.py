@@ -3,22 +3,21 @@
 
 import datetime
 import ddt
+import mock
 
-from certificates.tests.factories import GeneratedCertificateFactory  # pylint: disable=import-error
+from lms.djangoapps.certificates.tests.factories import GeneratedCertificateFactory
+from lms.djangoapps.certificates.api import is_passing_status
+from lms.envs.test import CREDENTIALS_PUBLIC_SERVICE_URL
 from course_modes.models import CourseMode
 from django.conf import settings
-from django.core.urlresolvers import reverse
+from django.urls import reverse
 from django.test.client import RequestFactory
-from lms.djangoapps.certificates.api import is_passing_status
 from opaque_keys.edx.locator import CourseLocator
-from openedx.core.djangoapps.waffle_utils.testutils import override_waffle_flag
 from openedx.features.learner_profile.views.learner_profile import learner_profile_context
 from student.tests.factories import CourseEnrollmentFactory, UserFactory
 from util.testing import UrlResetMixin
 from xmodule.modulestore.tests.django_utils import ModuleStoreTestCase
 from xmodule.modulestore.tests.factories import CourseFactory
-
-from ... import SHOW_ACHIEVEMENTS_FLAG
 
 
 @ddt.ddt
@@ -112,6 +111,11 @@ class LearnerProfileViewTest(UrlResetMixin, ModuleStoreTestCase):
         for attribute in self.CONTEXT_DATA:
             self.assertIn(attribute, response.content)
 
+    def test_records_link(self):
+        profile_path = reverse('learner_profile', kwargs={'username': self.USERNAME})
+        response = self.client.get(path=profile_path)
+        self.assertContains(response, '<a href="{}/records/">'.format(CREDENTIALS_PUBLIC_SERVICE_URL))
+
     def test_undefined_profile_page(self):
         """
         Verify that a 404 is returned for a non-existent profile page.
@@ -132,7 +136,6 @@ class LearnerProfileViewTest(UrlResetMixin, ModuleStoreTestCase):
         )
 
     @ddt.data(CourseMode.HONOR, CourseMode.PROFESSIONAL, CourseMode.VERIFIED)
-    @override_waffle_flag(SHOW_ACHIEVEMENTS_FLAG, active=True)
     def test_certificate_visibility(self, cert_mode):
         """
         Verify that certificates are displayed with the correct card mode.
@@ -150,7 +153,6 @@ class LearnerProfileViewTest(UrlResetMixin, ModuleStoreTestCase):
         ['notpassing', False],
     )
     @ddt.unpack
-    @override_waffle_flag(SHOW_ACHIEVEMENTS_FLAG, active=True)
     def test_certificate_status_visibility(self, status, is_passed_status):
         """
         Verify that certificates are only displayed for passing status.
@@ -169,7 +171,6 @@ class LearnerProfileViewTest(UrlResetMixin, ModuleStoreTestCase):
         else:
             self.assertNotContains(response, 'card certificate-card mode-{cert_mode}'.format(cert_mode=cert.mode))
 
-    @override_waffle_flag(SHOW_ACHIEVEMENTS_FLAG, active=True)
     def test_certificate_for_missing_course(self):
         """
         Verify that a certificate is not shown for a missing course.
@@ -183,7 +184,6 @@ class LearnerProfileViewTest(UrlResetMixin, ModuleStoreTestCase):
         self.assertNotContains(response, 'card certificate-card mode-{cert_mode}'.format(cert_mode=cert.mode))
 
     @ddt.data(True, False)
-    @override_waffle_flag(SHOW_ACHIEVEMENTS_FLAG, active=True)
     def test_no_certificate_visibility(self, own_profile):
         """
         Verify that the 'You haven't earned any certificates yet.' well appears on the user's
@@ -197,3 +197,28 @@ class LearnerProfileViewTest(UrlResetMixin, ModuleStoreTestCase):
             self.assertContains(response, 'You haven&#39;t earned any certificates yet.')
         else:
             self.assertNotContains(response, 'You haven&#39;t earned any certificates yet.')
+
+    @ddt.data(True, False)
+    def test_explore_courses_visibility(self, courses_browsable):
+        with mock.patch.dict('django.conf.settings.FEATURES', {'COURSES_ARE_BROWSABLE': courses_browsable}):
+            response = self.client.get('/u/{username}'.format(username=self.user.username))
+            if courses_browsable:
+                self.assertContains(response, 'Explore New Courses')
+            else:
+                self.assertNotContains(response, 'Explore New Courses')
+
+    def test_certificate_for_visibility_for_not_viewable_course(self):
+        """
+        Verify that a certificate is not shown if certificate are not viewable to users.
+        """
+        # add new course with certificate_available_date is future date.
+        course = CourseFactory.create(
+            certificate_available_date=datetime.datetime.now() + datetime.timedelta(days=5)
+        )
+
+        cert = self._create_certificate(course_key=course.id)
+        cert.save()
+
+        response = self.client.get('/u/{username}'.format(username=self.user.username))
+
+        self.assertNotContains(response, 'card certificate-card mode-{cert_mode}'.format(cert_mode=cert.mode))

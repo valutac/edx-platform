@@ -13,17 +13,19 @@ from django.template import defaultfilters
 
 from ccx_keys.locator import CCXLocator
 from model_utils.models import TimeStampedModel
-from opaque_keys.edx.keys import CourseKey
+from opaque_keys.edx.django.models import CourseKeyField, UsageKeyField
+from six import text_type
 
 from config_models.models import ConfigurationModel
 from lms.djangoapps import django_comment_client
+from openedx.core.djangoapps.catalog.models import CatalogIntegration
+from openedx.core.djangoapps.lang_pref.api import get_closest_released_language
 from openedx.core.djangoapps.models.course_details import CourseDetails
 from static_replace.models import AssetBaseUrlConfig
 from xmodule import course_metadata_utils, block_metadata_utils
 from xmodule.course_module import CourseDescriptor, DEFAULT_START_DATE
 from xmodule.error_module import ErrorDescriptor
 from xmodule.modulestore.django import modulestore
-from openedx.core.djangoapps.xmodule_django.models import CourseKeyField, UsageKeyField
 
 log = logging.getLogger(__name__)
 
@@ -194,7 +196,8 @@ class CourseOverview(TimeStampedModel):
         course_overview.course_video_url = CourseDetails.fetch_video_url(course.id)
         course_overview.self_paced = course.self_paced
 
-        course_overview.language = course.language
+        if not CatalogIntegration.is_enabled():
+            course_overview.language = course.language
 
         return course_overview
 
@@ -244,7 +247,7 @@ class CourseOverview(TimeStampedModel):
                     # to save a duplicate.
                     # (see: https://openedx.atlassian.net/browse/TNL-2854).
                     pass
-                except Exception:  # pylint: disable=broad-except
+                except Exception:
                     log.exception(
                         "CourseOverview for course %s failed!",
                         course_id,
@@ -320,6 +323,29 @@ class CourseOverview(TimeStampedModel):
                 version__gte=cls.VERSION
             )
         }
+
+    @classmethod
+    def get_from_id_if_exists(cls, course_id):
+        """
+        Return a CourseOverview for the provided course_id if it exists.
+        Returns None if no CourseOverview exists with the provided course_id
+
+        This method will *not* generate new CourseOverviews or delete outdated
+        ones. It exists only as a small optimization used when CourseOverviews
+        are known to exist, for common situations like the student dashboard.
+
+        Callers should assume that this list is incomplete and fall back to
+        get_from_id if they need to guarantee CourseOverview generation.
+        """
+        try:
+            course_overview = cls.objects.select_related('image_set').get(
+                id=course_id,
+                version__gte=cls.VERSION
+            )
+        except cls.DoesNotExist:
+            course_overview = None
+
+        return course_overview
 
     def clean_id(self, padding_char='='):
         """
@@ -490,6 +516,17 @@ class CourseOverview(TimeStampedModel):
         """
         return json.loads(self._pre_requisite_courses_json)
 
+    @pre_requisite_courses.setter
+    def pre_requisite_courses(self, value):
+        """
+        Django requires there be a setter for this, but it is not
+        necessary for the way we currently use it. Due to the way
+        CourseOverviews are constructed raising errors here will
+        cause a lot of issues. These should not be mutable after
+        construction, so for now we just eat this.
+        """
+        pass
+
     @classmethod
     def update_select_courses(cls, course_keys, force_update=False):
         """
@@ -515,7 +552,7 @@ class CourseOverview(TimeStampedModel):
                 log.exception(
                     'An error occurred while generating course overview for %s: %s',
                     unicode(course_key),
-                    ex.message,
+                    text_type(ex),
                 )
 
         log.info('Finished generating course overviews.')
@@ -551,10 +588,7 @@ class CourseOverview(TimeStampedModel):
         """
         Returns all course keys from course overviews.
         """
-        return [
-            CourseKey.from_string(course_overview['id'])
-            for course_overview in CourseOverview.objects.values('id')
-        ]
+        return CourseOverview.objects.values_list('id', flat=True)
 
     def is_discussion_tab_enabled(self):
         """
@@ -612,6 +646,15 @@ class CourseOverview(TimeStampedModel):
         """
         return 'self' if self.self_paced else 'instructor'
 
+    @property
+    def closest_released_language(self):
+        """
+        Returns the language code that most closely matches this course' language and is fully
+        supported by the LMS, or None if there are no fully supported languages that
+        match the target.
+        """
+        return get_closest_released_language(self.language) if self.language else None
+
     def apply_cdn_to_urls(self, image_urls):
         """
         Given a dict of resolutions -> urls, return a copy with CDN applied.
@@ -665,7 +708,7 @@ class CourseOverviewTab(models.Model):
     Model for storing and caching tabs information of a course.
     """
     tab_id = models.CharField(max_length=50)
-    course_overview = models.ForeignKey(CourseOverview, db_index=True, related_name="tabs")
+    course_overview = models.ForeignKey(CourseOverview, db_index=True, related_name="tabs", on_delete=models.CASCADE)
 
 
 class CourseOverviewImageSet(TimeStampedModel):
@@ -736,7 +779,8 @@ class CourseOverviewImageSet(TimeStampedModel):
        interested in extending this functionality.
 
     """
-    course_overview = models.OneToOneField(CourseOverview, db_index=True, related_name="image_set")
+    course_overview = models.OneToOneField(CourseOverview, db_index=True, related_name="image_set",
+                                           on_delete=models.CASCADE)
     small_url = models.TextField(blank=True, default="")
     large_url = models.TextField(blank=True, default="")
 

@@ -5,8 +5,6 @@ Unit tests for the course bookmarks feature.
 import ddt
 
 from django.test import RequestFactory
-from student.models import CourseEnrollment
-from student.tests.factories import UserFactory
 from xmodule.modulestore import ModuleStoreEnum
 from xmodule.modulestore.tests.django_utils import CourseUserType, SharedModuleStoreTestCase
 from xmodule.modulestore.tests.factories import CourseFactory, ItemFactory
@@ -24,7 +22,6 @@ class TestCourseBookmarksTool(SharedModuleStoreTestCase):
         """
         Set up a course to be used for testing.
         """
-        # setUpClassAndTestData() already calls setUpClass on SharedModuleStoreTestCase
         # pylint: disable=super-method-not-called
         with super(TestCourseBookmarksTool, cls).setUpClassAndTestData():
             with cls.store.default_store(ModuleStoreEnum.Type.split):

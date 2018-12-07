@@ -1,27 +1,23 @@
+"""
+Grade service
+"""
 from datetime import datetime
 
 import pytz
 
+from lms.djangoapps.utils import _get_key
 from opaque_keys.edx.keys import CourseKey, UsageKey
 from track.event_transaction_utils import create_new_event_transaction_id, set_event_transaction_type
-from util.date_utils import to_timestamp
 
 from .config.waffle import waffle_flags, REJECTED_EXAM_OVERRIDES_GRADE
 from .constants import ScoreDatabaseTableEnum
-from .models import PersistentSubsectionGrade, PersistentSubsectionGradeOverride
+from .events import SUBSECTION_OVERRIDE_EVENT_TYPE
+from .models import (
+    PersistentSubsectionGrade,
+    PersistentSubsectionGradeOverride,
+    PersistentSubsectionGradeOverrideHistory
+)
 from .signals.signals import SUBSECTION_OVERRIDE_CHANGED
-
-
-def _get_key(key_or_id, key_cls):
-    """
-    Helper method to get a course/usage key either from a string or a key_cls,
-    where the key_cls (CourseKey or UsageKey) will simply be returned.
-    """
-    return (
-        key_cls.from_string(key_or_id)
-        if isinstance(key_or_id, basestring)
-        else key_or_id
-    )
 
 
 class GradesService(object):
@@ -70,9 +66,6 @@ class GradesService(object):
         Fires off a recalculate_subsection_grade async task to update the PersistentSubsectionGrade table. Will not
         override earned_all or earned_graded value if they are None. Both default to None.
         """
-        # prevent circular imports:
-        from .signals.handlers import SUBSECTION_OVERRIDE_EVENT_TYPE
-
         course_key = _get_key(course_key_or_id, CourseKey)
         usage_key = _get_key(usage_key_or_id, UsageKey)
 
@@ -87,6 +80,12 @@ class GradesService(object):
             grade=grade,
             earned_all_override=earned_all,
             earned_graded_override=earned_graded
+        )
+
+        _ = PersistentSubsectionGradeOverrideHistory.objects.create(
+            override_id=override.id,
+            feature=PersistentSubsectionGradeOverrideHistory.PROCTORING,
+            action=PersistentSubsectionGradeOverrideHistory.CREATE_OR_UPDATE
         )
 
         # Cache a new event id and event type which the signal handler will use to emit a tracking log event.
@@ -113,15 +112,21 @@ class GradesService(object):
         Fires off a recalculate_subsection_grade async task to update the PersistentSubsectionGrade table. If the
         override does not exist, no error is raised, it just triggers the recalculation.
         """
-        # prevent circular imports:
-        from .signals.handlers import SUBSECTION_OVERRIDE_EVENT_TYPE
-
         course_key = _get_key(course_key_or_id, CourseKey)
         usage_key = _get_key(usage_key_or_id, UsageKey)
 
-        override = self.get_subsection_grade_override(user_id, course_key, usage_key)
+        try:
+            override = self.get_subsection_grade_override(user_id, course_key, usage_key)
+        except PersistentSubsectionGrade.DoesNotExist:
+            return
+
         # Older rejected exam attempts that transition to verified might not have an override created
         if override is not None:
+            _ = PersistentSubsectionGradeOverrideHistory.objects.create(
+                override_id=override.id,
+                feature=PersistentSubsectionGradeOverrideHistory.PROCTORING,
+                action=PersistentSubsectionGradeOverrideHistory.DELETE
+            )
             override.delete()
 
         # Cache a new event id and event type which the signal handler will use to emit a tracking log event.

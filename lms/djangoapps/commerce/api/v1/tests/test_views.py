@@ -7,20 +7,19 @@ import ddt
 import pytz
 from django.conf import settings
 from django.contrib.auth.models import Permission
-from django.core.urlresolvers import reverse
+from django.urls import reverse, reverse_lazy
 from django.test import TestCase
 from django.test.utils import override_settings
-from edx_rest_api_client import exceptions
-from nose.plugins.attrib import attr
 from rest_framework.utils.encoders import JSONEncoder
 
-from commerce.tests.mocks import mock_order_endpoint
-from commerce.tests.test_views import UserMixin
 from course_modes.models import CourseMode
 from lms.djangoapps.verify_student.models import VerificationDeadline
 from student.tests.factories import UserFactory
 from xmodule.modulestore.tests.django_utils import ModuleStoreTestCase
 from xmodule.modulestore.tests.factories import CourseFactory
+
+from ....tests.mocks import mock_order_endpoint
+from ....tests.test_views import UserMixin
 
 PASSWORD = 'test'
 JSON_CONTENT_TYPE = 'application/json'
@@ -82,7 +81,7 @@ class CourseApiViewTestMixin(object):
 
 class CourseListViewTests(CourseApiViewTestMixin, ModuleStoreTestCase):
     """ Tests for CourseListView. """
-    path = reverse('commerce_api:v1:courses:list')
+    path = reverse_lazy('commerce_api:v1:courses:list')
 
     def test_authentication_required(self):
         """ Verify only authenticated users can access the view. """
@@ -102,7 +101,6 @@ class CourseListViewTests(CourseApiViewTestMixin, ModuleStoreTestCase):
         self.assertListEqual(actual, expected)
 
 
-@attr(shard=3)
 @ddt.ddt
 class CourseRetrieveUpdateViewTests(CourseApiViewTestMixin, ModuleStoreTestCase):
     """ Tests for CourseRetrieveUpdateView. """
@@ -111,6 +109,7 @@ class CourseRetrieveUpdateViewTests(CourseApiViewTestMixin, ModuleStoreTestCase)
         NOW: datetime.now(),
         None: None,
     }
+    shard = 3
 
     def setUp(self):
         super(CourseRetrieveUpdateViewTests, self).setUp()
@@ -393,13 +392,13 @@ class CourseRetrieveUpdateViewTests(CourseApiViewTestMixin, ModuleStoreTestCase)
         self.assertDictEqual(expected_dict, json.loads(response.content))
 
 
-@attr(shard=1)
 class OrderViewTests(UserMixin, TestCase):
     """ Tests for the basket order view. """
     view_name = 'commerce_api:v1:orders:detail'
     ORDER_NUMBER = 'EDX-100001'
     MOCK_ORDER = {'number': ORDER_NUMBER}
-    path = reverse(view_name, kwargs={'number': ORDER_NUMBER})
+    path = reverse_lazy(view_name, kwargs={'number': ORDER_NUMBER})
+    shard = 1
 
     def setUp(self):
         super(OrderViewTests, self).setUp()
@@ -416,7 +415,7 @@ class OrderViewTests(UserMixin, TestCase):
 
     def test_order_not_found(self):
         """ If the order is not found, the view should return a 404. """
-        with mock_order_endpoint(order_number=self.ORDER_NUMBER, exception=exceptions.HttpNotFoundError):
+        with mock_order_endpoint(order_number=self.ORDER_NUMBER, status=404):
             response = self.client.get(self.path)
         self.assertEqual(response.status_code, 404)
 

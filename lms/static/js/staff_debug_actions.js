@@ -1,3 +1,4 @@
+/* globals _ */
 // Build StaffDebug object
 var StaffDebug = (function() {
     /* global getCurrentUrl:true */
@@ -144,7 +145,8 @@ var StaffDebug = (function() {
         getUser: getUser,
         getScore: getScore,
         sanitizeString: sanitizeString
-    }; })();
+    };
+}());
 
 // Register click handlers
 $(document).ready(function() {

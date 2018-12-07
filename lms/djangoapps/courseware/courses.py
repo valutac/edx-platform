@@ -8,6 +8,7 @@ from datetime import datetime
 
 import branding
 import pytz
+from openedx.features.course_duration_limits.access import AuditExpiredError
 from courseware.access import has_access
 from courseware.access_response import StartDateError, MilestoneAccessError
 from courseware.date_summary import (
@@ -21,17 +22,19 @@ from courseware.date_summary import (
 from courseware.model_data import FieldDataCache
 from courseware.module_render import get_module
 from django.conf import settings
-from django.core.urlresolvers import reverse
+from django.urls import reverse
 from django.http import Http404, QueryDict
 from enrollment.api import get_course_enrollment_details
 from edxmako.shortcuts import render_to_string
-from fs.errors import ResourceNotFoundError
+from fs.errors import ResourceNotFound
+from lms.djangoapps.certificates import api as certs_api
 from lms.djangoapps.courseware.courseware_access_exception import CoursewareAccessException
 from lms.djangoapps.courseware.exceptions import CourseAccessRedirect
 from opaque_keys.edx.keys import UsageKey
 from openedx.core.djangoapps.content.course_overviews.models import CourseOverview
 from openedx.core.djangoapps.site_configuration import helpers as configuration_helpers
 from path import Path as path
+from six import text_type
 from static_replace import replace_static_urls
 from student.models import CourseEnrollment
 from survey.utils import is_survey_required_and_unanswered
@@ -141,6 +144,15 @@ def check_course_access(course, user, action, check_if_enrolled=False, check_sur
                 params=params.urlencode()
             ), access_response)
 
+        # Redirect if AuditExpiredError
+        if isinstance(access_response, AuditExpiredError):
+            params = QueryDict(mutable=True)
+            params['access_response_error'] = access_response.additional_context_user_message
+            raise CourseAccessRedirect('{dashboard_url}?{params}'.format(
+                dashboard_url=reverse('dashboard'),
+                params=params.urlencode()
+            ), access_response)
+
         # Redirect if the user must answer a survey before entering the course.
         if isinstance(access_response, MilestoneAccessError):
             raise CourseAccessRedirect('{dashboard_url}'.format(
@@ -207,13 +219,13 @@ def find_file(filesystem, dirs, filename):
     dirs: a list of path objects
     filename: a string
 
-    Returns d / filename if found in dir d, else raises ResourceNotFoundError.
+    Returns d / filename if found in dir d, else raises ResourceNotFound.
     """
     for directory in dirs:
         filepath = path(directory) / filename
         if filesystem.exists(filepath):
             return filepath
-    raise ResourceNotFoundError(u"Could not find {0}".format(filename))
+    raise ResourceNotFound(u"Could not find {0}".format(filename))
 
 
 def get_course_about_section(request, course, section_key):
@@ -223,6 +235,7 @@ def get_course_about_section(request, course, section_key):
 
     Valid keys:
     - overview
+    - about_sidebar_html
     - short_description
     - description
     - key_dates (includes start, end, exams, etc)
@@ -258,6 +271,7 @@ def get_course_about_section(request, course, section_key):
         'effort',
         'end_date',
         'prerequisites',
+        'about_sidebar_html',
         'ocw_links'
     }
 
@@ -294,7 +308,7 @@ def get_course_about_section(request, course, section_key):
         except ItemNotFoundError:
             log.warning(
                 u"Missing about section %s in course %s",
-                section_key, course.location.to_deprecated_string()
+                section_key, text_type(course.location)
             )
             return None
 
@@ -367,14 +381,15 @@ def get_course_date_blocks(course, user):
     Return the list of blocks to display on the course info page,
     sorted by date.
     """
-    block_classes = (
-        CertificateAvailableDate,
+    block_classes = [
         CourseEndDate,
         CourseStartDate,
         TodaysDate,
         VerificationDeadlineDate,
         VerifiedUpgradeDeadlineDate,
-    )
+    ]
+    if certs_api.get_active_web_certificate(course):
+        block_classes.insert(0, CertificateAvailableDate)
 
     blocks = (cls(course, user) for cls in block_classes)
 
@@ -419,10 +434,10 @@ def get_course_syllabus_section(course, section_key):
                     course_id=course.id,
                     static_asset_path=course.static_asset_path,
                 )
-        except ResourceNotFoundError:
+        except ResourceNotFound:
             log.exception(
                 u"Missing syllabus section %s in course %s",
-                section_key, course.location.to_deprecated_string()
+                section_key, text_type(course.location)
             )
             return "! Syllabus missing !"
 
@@ -535,7 +550,7 @@ def get_problems_in_section(section):
     for subsection in section_descriptor.get_children():
         for vertical in subsection.get_children():
             for component in vertical.get_children():
-                if component.location.category == 'problem' and getattr(component, 'has_score', False):
+                if component.location.block_type == 'problem' and getattr(component, 'has_score', False):
                     problem_descriptors[unicode(component.location)] = component
 
     return problem_descriptors
@@ -592,3 +607,20 @@ def get_current_child(xmodule, min_depth=None, requested_child=None):
                 child = _get_default_child_module(children)
 
     return child
+
+
+def get_course_chapter_ids(course_key):
+    """
+    Extracts the chapter block keys from a course structure.
+
+    Arguments:
+        course_key (CourseLocator): The course key
+    Returns:
+        list (string): The list of string representations of the chapter block keys in the course.
+    """
+    try:
+        chapter_keys = modulestore().get_course(course_key).children
+    except Exception:  # pylint: disable=broad-except
+        log.exception('Failed to retrieve course from modulestore.')
+        return []
+    return [unicode(chapter_key) for chapter_key in chapter_keys if chapter_key.block_type == 'chapter']

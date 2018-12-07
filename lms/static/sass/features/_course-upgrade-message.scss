@@ -1,134 +1,54 @@
 /*
-  NOTE: If you make significant changes to the design, remember to update the Segment event properties and change
-  the creative property. This will allow us to better track individual performance of each style of the message.
-  Search for the courseware_verified_certificate_upsell promotion ID.
- */
-$upgrade-message-background-color: $blue-d1;
+NOTE: If you make significant changes to the design, remember to update the Segment event properties and change
+the creative property. This will allow us to better track individual performance of each style of the message.
+Search for the courseware_verified_certificate_upsell promotion ID.
+*/
 
-// Expanded upgrade message
-.vc-message {
-  background: $blue-d1;
-  color: $white;
-  padding: $baseline;
-  position: relative;
-  margin: 0 0 $baseline;
+.course-home-sidebar-upgrade .btn-upgrade {
+  padding: 10px 20px;
+}
 
-  // CSS animation for smooth height transition
-  -webkit-transition: all 0.2s ease-in-out;
-  transition: all 0.2s ease-in-out;
+.course-home-sidebar-upgrade .promo-learn-more {
+  border: none;
+}
 
-  &::after {
-    content: "";
-    display: table;
-    clear: both;
-  }
+.section.section-upgrade {
+  border-left: solid 1px #d9d9d9;
+  border-bottom: solid 1px #d9d9d9;
+  border-right: solid 1px #d9d9d9;
+  border-top: 5px solid #008100;
+  padding: 20px;
+}
 
-  // Message copy
-  .vc-title {
-    font-size: 1.25rem;
-    font-weight: 700;
-    margin-bottom: 1rem;
+.section.section-upgrade .btn-link {
+  font-weight: normal;
+}
 
-    @include float(left);
-  }
+.section.section-upgrade .btn-upgrade {
+  background-color: #008100;
+  border-color: #008100;
+}
 
-  .vc-selling-points {
-    @include clear(left);
-    @include padding-left(0);
+.section-upgrade .upgrade-container {
+  float: right;
+  text-align: center;
+  margin-top: 15px;
+}
 
-    font-size: 0.825rem;
-    margin: 1rem 0;
-    display: table;
-
-    > .vc-selling-point {
-      list-style: none;
-      display: table-row;
-
-      &::before {
-        content: "\2022";
-        display: table-cell;
-
-        @include padding-right($baseline/2);
-      }
-
-      &::after {
-        content: "";
-        display: table-row;
-        height: 0.25rem;
-      }
-    }
-  }
-
-  img {
-    max-width: 100%;
-  }
-
-  // Show/hide button
-  .vc-toggle {
-    @include float(right);
-
-    color: $white;
-  }
-
-  // Upgrade Button
-  .btn-upgrade {
-    @extend %btn-primary-green;
-
-    background: $uxpl-green-base;
-  }
-
-  // Cert image
-  .vc-hero {
-    @include float(right);
-    @include padding-left(1rem);
-
-    clear: both;
-    width: 35%;
-
-    img {
-      max-width: 100%;
-    }
+@media only screen and (max-width: 991px) and (min-width: 768px)  {
+  .section-upgrade .upgrade-container {
+    float: none;
   }
 }
 
-// Collapsed upgrade message
-.vc-message.polite {
-  padding-top: $baseline/2;
-  padding-bottom: $baseline/2;
-  min-height: 46px;
-  display: flex;
-  flex-flow: row wrap;
-  align-items: center;
-
-  .vc-title {
-    margin: 0;
-
-    @include margin-right(auto);
-  }
-
-  .vc-cta {
-    @include margin-right(1rem);
-  }
-
-  .vc-toggle {
-    order: 99;
-  }
-
-  .vc-fade:not(.vc-polite-only) {
-    display: none;
-  }
+.section.section-upgrade p {
+  margin: 0.5em 0;
 }
 
-@media (max-width: $bp-screen-md) {
-  .vc-message.polite .vc-title {
-    clear: both;
-    width: 100%;
-    margin-bottom: 1rem;
-  }
+.section-upgrade .btn-brand.btn-upgrade {
+  color: white !important;
 }
 
-@media (max-width: $bp-screen-sm) {
-  .vc-message .vc-hero {
-    display: none !important;
-  }
+.section.section-upgrade img {
+  width: 43%;
 }

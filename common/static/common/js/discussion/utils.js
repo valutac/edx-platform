@@ -7,6 +7,9 @@
 
         DiscussionUtil.wmdEditors = {};
 
+        DiscussionUtil.leftKey = 37;
+        DiscussionUtil.rightKey = 39;
+
         DiscussionUtil.getTemplate = function(id) {
             return $('script#' + id).html();
         };
@@ -27,6 +30,9 @@
             var staff;
             if (_.isUndefined(userId)) {
                 userId = this.user ? this.user.id : void 0;
+            }
+            if(_.isUndefined(this.roleIds)) {
+                this.roleIds = {}
             }
             staff = _.union(this.roleIds.Moderator, this.roleIds.Administrator);
             return _.include(staff, parseInt(userId));
@@ -108,9 +114,9 @@
                 user_profile: '/courses/' + $$course_id + '/discussion/forum/users/' + param,
                 followed_threads: '/courses/' + $$course_id + '/discussion/forum/users/' + param + '/followed',
                 threads: '/courses/' + $$course_id + '/discussion/forum',
-                'enable_notifications': '/notification_prefs/enable/',
-                'disable_notifications': '/notification_prefs/disable/',
-                'notifications_status': '/notification_prefs/status/'
+                enable_notifications: '/notification_prefs/enable/',
+                disable_notifications: '/notification_prefs/disable/',
+                notifications_status: '/notification_prefs/status/'
             }[name];
         };
 
@@ -537,6 +543,38 @@
                 first: minPage > 1 ? pageInfo(1) : null,
                 last: maxPage < numPages ? pageInfo(numPages) : null
             };
+        };
+
+        DiscussionUtil.handleKeypressInToolbar = function(event) {
+            var $currentButton, $nextButton, $toolbar, $allButtons,
+                keyPressed, nextIndex, currentButtonIndex,
+                validKeyPress, toolbarHasButtons;
+
+            $currentButton = $(event.target);
+            keyPressed = event.which || event.keyCode;
+            $toolbar = $currentButton.parent();
+            $allButtons = $toolbar.children('.wmd-button');
+
+            validKeyPress = keyPressed === this.leftKey || keyPressed === this.rightKey;
+            toolbarHasButtons = $allButtons.length > 0;
+
+            if (validKeyPress && toolbarHasButtons) {
+                currentButtonIndex = $allButtons.index($currentButton);
+                nextIndex = keyPressed === this.leftKey ? currentButtonIndex - 1 : currentButtonIndex + 1;
+                nextIndex = Math.max(Math.min(nextIndex, $allButtons.length - 1), 0);
+
+                $nextButton = $($allButtons[nextIndex]);
+                this.moveSelectionToNextItem($currentButton, $nextButton);
+            }
+        };
+
+        DiscussionUtil.moveSelectionToNextItem = function(prevItem, nextItem) {
+            prevItem.attr('aria-selected', 'false');
+            prevItem.attr('tabindex', '-1');
+
+            nextItem.attr('aria-selected', 'true');
+            nextItem.attr('tabindex', '0');
+            nextItem.focus();
         };
 
         return DiscussionUtil;

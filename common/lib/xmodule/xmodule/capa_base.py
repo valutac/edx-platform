@@ -18,6 +18,8 @@ try:
 except ImportError:
     dog_stats_api = None
 from pytz import utc
+from django.utils.encoding import smart_text
+from six import text_type
 
 from capa.capa_problem import LoncapaProblem, LoncapaSystem
 from capa.inputtypes import Status
@@ -188,8 +190,8 @@ class CapaFields(object):
     # enforce_type is set to False here because this field is saved as a dict in the database.
     score = ScoreField(help=_("Dictionary with the current student score"), scope=Scope.user_state, enforce_type=False)
     has_saved_answers = Boolean(help=_("Whether or not the answers have been saved since last submit"),
-                                scope=Scope.user_state)
-    done = Boolean(help=_("Whether the student has answered the problem"), scope=Scope.user_state)
+                                scope=Scope.user_state, default=False)
+    done = Boolean(help=_("Whether the student has answered the problem"), scope=Scope.user_state, default=False)
     seed = Integer(help=_("Random seed for this student"), scope=Scope.user_state)
     last_submission_time = Date(help=_("Last submission time"), scope=Scope.user_state)
     submission_wait_seconds = Integer(
@@ -245,7 +247,7 @@ class CapaMixin(ScorableXBlockMixin, CapaFields):
         # Need the problem location in openendedresponse to send out.  Adding
         # it to the system here seems like the least clunky way to get it
         # there.
-        self.runtime.set('location', self.location.to_deprecated_string())
+        self.runtime.set('location', text_type(self.location))
 
         try:
             # TODO (vshnayder): move as much as possible of this work and error
@@ -263,7 +265,7 @@ class CapaMixin(ScorableXBlockMixin, CapaFields):
 
         except Exception as err:  # pylint: disable=broad-except
             msg = u'cannot create LoncapaProblem {loc}: {err}'.format(
-                loc=self.location.to_deprecated_string(), err=err)
+                loc=text_type(self.location), err=err)
             # TODO (vshnayder): do modules need error handlers too?
             # We shouldn't be switching on DEBUG.
             if self.runtime.DEBUG:
@@ -285,7 +287,7 @@ class CapaMixin(ScorableXBlockMixin, CapaFields):
                 problem_text = (
                     u'<problem><text><span class="inline-error">'
                     u'Problem {url} has an error:</span>{msg}</text></problem>'.format(
-                        url=self.location.to_deprecated_string(),
+                        url=text_type(self.location),
                         msg=msg,
                     )
                 )
@@ -428,7 +430,7 @@ class CapaMixin(ScorableXBlockMixin, CapaFields):
 
         return self.runtime.render_template('problem_ajax.html', {
             'element_id': self.location.html_id(),
-            'id': self.location.to_deprecated_string(),
+            'id': text_type(self.location),
             'ajax_url': self.runtime.ajax_url,
             'current_score': curr_score,
             'total_possible': total_possible,
@@ -542,17 +544,17 @@ class CapaMixin(ScorableXBlockMixin, CapaFields):
 
         `err` is the Exception encountered while rendering the problem HTML.
         """
-        log.exception(err.message)
+        log.exception(text_type(err))
 
         # TODO (vshnayder): another switch on DEBUG.
         if self.runtime.DEBUG:
             msg = (
                 u'[courseware.capa.capa_module] <font size="+1" color="red">'
                 u'Failed to generate HTML for problem {url}</font>'.format(
-                    url=cgi.escape(self.location.to_deprecated_string()))
+                    url=cgi.escape(text_type(self.location)))
             )
-            msg += u'<p>Error:</p><p><pre>{msg}</pre></p>'.format(msg=cgi.escape(err.message))
-            msg += u'<p><pre>{tb}</pre></p>'.format(tb=cgi.escape(traceback.format_exc()))
+            msg += u'<p>Error:</p><p><pre>{msg}</pre></p>'.format(msg=cgi.escape(text_type(err)))
+            msg += u'<p><pre>{tb}</pre></p>'.format(tb=traceback.format_exc())
             html = msg
 
         else:
@@ -640,12 +642,15 @@ class CapaMixin(ScorableXBlockMixin, CapaFields):
             # Translators: {previous_hints} is the HTML of hints that have already been generated, {hint_number_prefix}
             # is a header for this hint, and {hint_text} is the text of the hint itself.
             # This string is being passed to translation only for possible reordering of the placeholders.
-            total_text = HTML(_('{previous_hints}<li><strong>{hint_number_prefix}</strong>{hint_text}</li>')).format(
+            total_text = HTML(_('{previous_hints}{list_start_tag}{strong_text}{hint_text}</li>')).format(
                 previous_hints=HTML(total_text),
-                # Translators: e.g. "Hint 1 of 3: " meaning we are showing the first of three hints.
-                # This text is shown in bold before the accompanying hint text.
-                hint_number_prefix=Text(_("Hint ({hint_num} of {hints_count}): ")).format(
-                    hint_num=counter + 1, hints_count=len(demand_hints)
+                list_start_tag=HTML('<li class="hint-index-{counter}" tabindex="-1">').format(counter=counter),
+                strong_text=HTML('<strong>{hint_number_prefix}</strong>').format(
+                    # Translators: e.g. "Hint 1 of 3: " meaning we are showing the first of three hints.
+                    # This text is shown in bold before the accompanying hint text.
+                    hint_number_prefix=Text(_("Hint ({hint_num} of {hints_count}): ")).format(
+                        hint_num=counter + 1, hints_count=len(demand_hints)
+                    )
                 ),
                 # Course-authored HTML demand hints are supported.
                 hint_text=HTML(get_inner_html_from_xpath(demand_hints[counter]))
@@ -657,7 +662,7 @@ class CapaMixin(ScorableXBlockMixin, CapaFields):
         # Log this demand-hint request. Note that this only logs the last hint requested (although now
         # all previously shown hints are still displayed).
         event_info = dict()
-        event_info['module_id'] = self.location.to_deprecated_string()
+        event_info['module_id'] = text_type(self.location)
         event_info['hint_index'] = hint_index
         event_info['hint_len'] = len(demand_hints)
         event_info['hint_text'] = get_inner_html_from_xpath(demand_hints[hint_index])
@@ -700,7 +705,7 @@ class CapaMixin(ScorableXBlockMixin, CapaFields):
 
         content = {
             'name': self.display_name_with_default,
-            'html': html,
+            'html': smart_text(html),
             'weight': self.weight,
         }
 
@@ -719,7 +724,7 @@ class CapaMixin(ScorableXBlockMixin, CapaFields):
 
         context = {
             'problem': content,
-            'id': self.location.to_deprecated_string(),
+            'id': text_type(self.location),
             'short_id': self.location.html_id(),
             'submit_button': submit_button,
             'submit_button_submitting': submit_button_submitting,
@@ -901,11 +906,11 @@ class CapaMixin(ScorableXBlockMixin, CapaFields):
             # unless the problem explicitly prevents it
             return True
         elif self.showanswer == SHOWANSWER.ATTEMPTED:
-            return self.attempts > 0
+            return self.attempts > 0 or self.is_past_due()
         elif self.showanswer == SHOWANSWER.ANSWERED:
             # NOTE: this is slightly different from 'attempted' -- resetting the problems
             # makes lcp.done False, but leaves attempts unchanged.
-            return self.lcp.done
+            return self.is_correct()
         elif self.showanswer == SHOWANSWER.CLOSED:
             return self.closed()
         elif self.showanswer == SHOWANSWER.FINISHED:
@@ -947,7 +952,7 @@ class CapaMixin(ScorableXBlockMixin, CapaFields):
         self.lcp.update_score(score_msg, queuekey)
         self.set_state_from_lcp()
         self.set_score(self.score_from_lcp())
-        self.publish_grade()
+        self.publish_grade(grader_response=True)
 
         return dict()  # No AJAX return is needed
 
@@ -1001,7 +1006,7 @@ class CapaMixin(ScorableXBlockMixin, CapaFields):
             (and also screen reader text).
         """
         event_info = dict()
-        event_info['problem_id'] = self.location.to_deprecated_string()
+        event_info['problem_id'] = text_type(self.location)
         self.track_function_unmask('showanswer', event_info)
         if not self.answer_available():
             raise NotFoundError('Answer is not available')
@@ -1126,19 +1131,21 @@ class CapaMixin(ScorableXBlockMixin, CapaFields):
 
         return answers
 
-    def publish_grade(self, only_if_higher=None):
+    def publish_grade(self, score=None, only_if_higher=None, **kwargs):
         """
         Publishes the student's current grade to the system as an event
         """
-        self.runtime.publish(
-            self,
-            'grade',
-            {
-                'value': self.score.raw_earned,
-                'max_value': self.score.raw_possible,
-                'only_if_higher': only_if_higher,
-            }
-        )
+        if not score:
+            score = self.score
+        event = {
+            'value': score.raw_earned,
+            'max_value': score.raw_possible,
+            'only_if_higher': only_if_higher,
+        }
+        if kwargs.get('grader_response'):
+            event['grader_response'] = kwargs['grader_response']
+
+        self.runtime.publish(self, 'grade', event)
 
         return {'grade': self.score.raw_earned, 'max_grade': self.score.raw_possible}
 
@@ -1153,7 +1160,7 @@ class CapaMixin(ScorableXBlockMixin, CapaFields):
         """
         event_info = dict()
         event_info['state'] = self.lcp.get_state()
-        event_info['problem_id'] = self.location.to_deprecated_string()
+        event_info['problem_id'] = text_type(self.location)
 
         self.lcp.has_saved_answers = False
         answers = self.make_dict_of_responses(data)
@@ -1209,7 +1216,12 @@ class CapaMixin(ScorableXBlockMixin, CapaFields):
                 }
 
         try:
+            # expose the attempt number to a potential python custom grader
+            # self.lcp.context['attempt'] refers to the attempt number (1-based)
+            self.lcp.context['attempt'] = self.attempts + 1
             correct_map = self.lcp.grade_answers(answers)
+            # self.attempts refers to the number of attempts that did not
+            # raise an error (0-based)
             self.attempts = self.attempts + 1
             self.lcp.done = True
             self.set_state_from_lcp()
@@ -1231,17 +1243,17 @@ class CapaMixin(ScorableXBlockMixin, CapaFields):
             # the full exception, including traceback,
             # in the response
             if self.runtime.user_is_staff:
-                msg = u"Staff debug info: {tb}".format(tb=cgi.escape(traceback.format_exc()))
+                msg = u"Staff debug info: {tb}".format(tb=traceback.format_exc())
 
             # Otherwise, display just an error message,
             # without a stack trace
             else:
-                escaped_message = cgi.escape(inst.args[0])
+                full_error = inst.args[0]
                 try:
                     # only return the error value of the exception
-                    msg = escaped_message.split("\\n")[-2].split(": ", 1)[1]
+                    msg = full_error.split("\\n")[-2].split(": ", 1)[1]
                 except IndexError:
-                    msg = escaped_message
+                    msg = full_error
 
             return {'success': msg}
 
@@ -1251,11 +1263,10 @@ class CapaMixin(ScorableXBlockMixin, CapaFields):
             self.set_score(self.score_from_lcp())
 
             if self.runtime.DEBUG:
-                msg = u"Error checking problem: {}".format(err.message)
+                msg = u"Error checking problem: {}".format(text_type(err))
                 msg += u'\nTraceback:\n{}'.format(traceback.format_exc())
                 return {'success': msg}
             raise
-
         published_grade = self.publish_grade()
 
         # success = correct if ALL questions in this problem are correct
@@ -1469,7 +1480,7 @@ class CapaMixin(ScorableXBlockMixin, CapaFields):
         """
         event_info = dict()
         event_info['state'] = self.lcp.get_state()
-        event_info['problem_id'] = self.location.to_deprecated_string()
+        event_info['problem_id'] = text_type(self.location)
 
         answers = self.make_dict_of_responses(data)
         event_info['answers'] = answers
@@ -1529,7 +1540,7 @@ class CapaMixin(ScorableXBlockMixin, CapaFields):
         """
         event_info = dict()
         event_info['old_state'] = self.lcp.get_state()
-        event_info['problem_id'] = self.location.to_deprecated_string()
+        event_info['problem_id'] = text_type(self.location)
         _ = self.runtime.service(self, "i18n").ugettext
 
         if self.closed():
@@ -1594,7 +1605,7 @@ class CapaMixin(ScorableXBlockMixin, CapaFields):
         Returns the error messages for exceptions occurring while performing
         the rescoring, rather than throwing them.
         """
-        event_info = {'state': self.lcp.get_state(), 'problem_id': self.location.to_deprecated_string()}
+        event_info = {'state': self.lcp.get_state(), 'problem_id': text_type(self.location)}
 
         _ = self.runtime.service(self, "i18n").ugettext
 
@@ -1615,10 +1626,9 @@ class CapaMixin(ScorableXBlockMixin, CapaFields):
         orig_score = self.get_score()
         event_info['orig_score'] = orig_score.raw_earned
         event_info['orig_total'] = orig_score.raw_possible
-
         try:
+            self.update_correctness()
             calculated_score = self.calculate_score()
-
         except (StudentInputError, ResponseError, LoncapaProblemError) as inst:
             log.warning("Input error in capa_module:problem_rescore", exc_info=True)
             event_info['failure'] = 'input_error'
@@ -1633,8 +1643,7 @@ class CapaMixin(ScorableXBlockMixin, CapaFields):
         # rescoring should have no effect on attempts, so don't
         # need to increment here, or mark done.  Just save.
         self.set_state_from_lcp()
-        self.set_score(calculated_score)
-        self.publish_grade(only_if_higher)
+        self.publish_grade(score=calculated_score, only_if_higher=only_if_higher)
 
         event_info['new_score'] = calculated_score.raw_earned
         event_info['new_total'] = calculated_score.raw_possible
@@ -1668,14 +1677,23 @@ class CapaMixin(ScorableXBlockMixin, CapaFields):
         """
         return self.score
 
+    def update_correctness(self):
+        """
+        Updates correct map of the LCP.
+        Operates by creating a new correctness map based on the current
+        state of the LCP, and updating the old correctness map of the LCP.
+        """
+        # Make sure that the attempt number is always at least 1 for grading purposes,
+        # even if the number of attempts have been reset and this problem is regraded.
+        self.lcp.context['attempt'] = max(self.attempts, 1)
+        new_correct_map = self.lcp.get_grade_from_current_answers(None)
+        self.lcp.correct_map.update(new_correct_map)
+
     def calculate_score(self):
         """
         Returns the score calculated from the current problem state.
-        Operates by creating a new correctness map based on the current
-        state of the LCP, and having the LCP generate a score from that.
         """
-        new_correctness = self.lcp.get_grade_from_current_answers(None)
-        new_score = self.lcp.calculate_score(new_correctness)
+        new_score = self.lcp.calculate_score()
         return Score(raw_earned=new_score['score'], raw_possible=new_score['total'])
 
     def score_from_lcp(self):

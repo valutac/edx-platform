@@ -11,10 +11,11 @@ from django.core import exceptions
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.http import HttpRequest
 from django.test import TestCase
-from django.utils.timezone import UTC
+from pytz import UTC
 from mock import Mock, patch
 from opaque_keys.edx.keys import CourseKey
 from opaque_keys.edx.locations import CourseLocator
+from six import text_type
 
 import util.file
 from util.file import (
@@ -45,7 +46,7 @@ class FilenameGeneratorTestCase(TestCase):
     """
     Tests for course_and_time_based_filename_generator
     """
-    NOW = datetime.strptime('1974-06-22T01:02:03', '%Y-%m-%dT%H:%M:%S').replace(tzinfo=UTC())
+    NOW = datetime.strptime('1974-06-22T01:02:03', '%Y-%m-%dT%H:%M:%S').replace(tzinfo=UTC)
 
     def setUp(self):
         super(FilenameGeneratorTestCase, self).setUp()
@@ -95,7 +96,7 @@ class StoreUploadedFileTestCase(TestCase):
         """
         Helper method to verify exception text.
         """
-        self.assertEqual(expected_message, error.exception.message)
+        self.assertEqual(expected_message, text_type(error.exception))
 
     def test_error_conditions(self):
         """

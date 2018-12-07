@@ -8,7 +8,7 @@ from config_models.decorators import require_config
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import Group
-from django.core.urlresolvers import reverse
+from django.urls import reverse
 from django.db.models import Q
 from django.http import (
     Http404,
@@ -106,7 +106,7 @@ def add_course_to_cart(request, course_id):
     """
 
     assert isinstance(course_id, basestring)
-    if not request.user.is_authenticated():
+    if not request.user.is_authenticated:
         log.info(u"Anon user trying to add course %s to cart", course_id)
         return HttpResponseForbidden(_('You must be logged-in to add to a shopping cart'))
     cart = Order.get_cart_for_user(request.user)
@@ -250,7 +250,9 @@ def remove_item(request):
             item_id
         )
     else:
-        item = items[0]
+        # Reload the item directly to prevent select_subclasses() hackery from interfering with
+        # deletion of all objects in the model inheritance hierarchy
+        item = items[0].__class__.objects.get(id=item_id)
         if item.user == request.user:
             Order.remove_cart_item_from_order(item, request.user)
             item.order.update_order_type()
@@ -395,6 +397,9 @@ def register_code_redemption(request, registration_code):
             else:
                 for cart_item in cart_items:
                     if isinstance(cart_item, PaidCourseRegistration) or isinstance(cart_item, CourseRegCodeItem):
+                        # Reload the item directly to prevent select_subclasses() hackery from interfering with
+                        # deletion of all objects in the model inheritance hierarchy
+                        cart_item = cart_item.__class__.objects.get(id=cart_item.id)
                         cart_item.delete()
 
             #now redeem the reg code.
@@ -525,6 +530,7 @@ def use_coupon_code(coupons, user):
 
 
 @require_config(DonationConfiguration)
+@csrf_exempt
 @require_POST
 @login_required
 def donate(request):

@@ -11,8 +11,10 @@ from django.core import exceptions
 from django.http import Http404, HttpResponse, HttpResponseServerError
 from django.utils.translation import ugettext as _
 from django.views.decorators import csrf
+from django.views.decorators.clickjacking import xframe_options_exempt
 from django.views.decorators.http import require_GET, require_POST
 from opaque_keys.edx.keys import CourseKey
+from six import text_type
 
 import django_comment_client.settings as cc_settings
 import lms.lib.comment_client as cc
@@ -28,7 +30,6 @@ from django_comment_client.utils import (
     get_annotated_content_info,
     get_cached_discussion_id_map,
     get_group_id_for_comments_service,
-    get_group_id_for_user,
     get_user_group_ids,
     is_comment_too_deep,
     prepare_content
@@ -42,7 +43,9 @@ from django_comment_common.signals import (
     thread_created,
     thread_deleted,
     thread_edited,
-    thread_voted
+    thread_voted,
+    thread_followed,
+    thread_unfollowed,
 )
 from django_comment_common.utils import ThreadContext
 import eventtracking
@@ -97,7 +100,7 @@ def track_created_event(request, event_name, course, obj, data):
     track_forum_event(request, event_name, course, obj, data)
 
 
-def add_truncated_title_to_event_data(event_data, full_title):  # pylint: disable=invalid-name
+def add_truncated_title_to_event_data(event_data, full_title):
     event_data['title_truncated'] = (len(full_title) > TRACKING_MAX_FORUM_TITLE)
     event_data['title'] = full_title[:TRACKING_MAX_FORUM_TITLE]
 
@@ -255,7 +258,7 @@ def create_thread(request, course_id, commentable_id):
         'anonymous': anonymous,
         'anonymous_to_peers': anonymous_to_peers,
         'commentable_id': commentable_id,
-        'course_id': course_key.to_deprecated_string(),
+        'course_id': text_type(course_key),
         'user_id': user.id,
         'thread_type': post["thread_type"],
         'body': post["body"],
@@ -291,6 +294,7 @@ def create_thread(request, course_id, commentable_id):
     if follow:
         cc_user = cc.User.from_django_user(user)
         cc_user.follow(thread)
+        thread_followed.send(sender=None, user=user, post=thread)
 
     data = thread.to_dict()
 
@@ -372,7 +376,7 @@ def _create_comment(request, course_key, thread_id=None, parent_id=None):
         anonymous=anonymous,
         anonymous_to_peers=anonymous_to_peers,
         user_id=user.id,
-        course_id=course_key.to_deprecated_string(),
+        course_id=text_type(course_key),
         thread_id=thread_id,
         parent_id=parent_id,
         body=post["body"]
@@ -525,6 +529,7 @@ def _vote_or_unvote(request, course_id, obj, value='up', undo_vote=False):
         # (People could theoretically downvote by handcrafting AJAX requests.)
     else:
         user.vote(obj, value)
+    thread_voted.send(sender=None, user=request.user, post=obj)
     track_voted_event(request, course, obj, value, undo_vote)
     return JsonResponse(prepare_content(obj.to_dict(), course_key))
 
@@ -563,7 +568,6 @@ def vote_for_thread(request, course_id, thread_id, value):
     """
     thread = cc.Thread.find(thread_id)
     result = _vote_or_unvote(request, course_id, thread, value)
-    thread_voted.send(sender=None, user=request.user, post=thread)
     return result
 
 
@@ -689,6 +693,7 @@ def follow_thread(request, course_id, thread_id):
     user = cc.User.from_django_user(request.user)
     thread = cc.Thread.find(thread_id)
     user.follow(thread)
+    thread_followed.send(sender=None, user=request.user, post=thread)
     return JsonResponse({})
 
 
@@ -717,6 +722,7 @@ def unfollow_thread(request, course_id, thread_id):
     user = cc.User.from_django_user(request.user)
     thread = cc.Thread.find(thread_id)
     user.unfollow(thread)
+    thread_unfollowed.send(sender=None, user=request.user, post=thread)
     return JsonResponse({})
 
 
@@ -737,6 +743,7 @@ def unfollow_commentable(request, course_id, commentable_id):
 @require_POST
 @login_required
 @csrf.csrf_exempt
+@xframe_options_exempt
 def upload(request, course_id):  # ajax upload file to a question or answer
     """view that handles file upload via Ajax
     """
@@ -747,7 +754,7 @@ def upload(request, course_id):  # ajax upload file to a question or answer
     try:
         # TODO authorization
         #may raise exceptions.PermissionDenied
-        #if request.user.is_anonymous():
+        #if request.user.is_anonymous:
         #    msg = _('Sorry, anonymous users cannot upload files')
         #    raise exceptions.PermissionDenied(msg)
 

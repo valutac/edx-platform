@@ -1,6 +1,6 @@
 define(
     ['jquery', 'underscore', 'backbone', 'js/views/previous_video_upload', 'common/js/spec_helpers/template_helpers',
-     'common/js/spec_helpers/view_helpers'],
+        'common/js/spec_helpers/view_helpers'],
     function($, _, Backbone, PreviousVideoUploadView, TemplateHelpers, ViewHelpers) {
         'use strict';
         describe('PreviousVideoUploadView', function() {
@@ -10,11 +10,15 @@ define(
                         duration: 42,
                         created: '2014-11-25T23:13:05',
                         edx_video_id: 'dummy_id',
-                        status: 'uploading'
+                        status: 'uploading',
+                        transcripts: []
                     },
                     view = new PreviousVideoUploadView({
                         model: new Backbone.Model($.extend({}, defaultData, modelData)),
                         videoHandlerUrl: '/videos/course-v1:org.0+course_0+Run_0',
+                        transcriptAvailableLanguages: [],
+                        videoSupportedFileFormats: [],
+                        videoTranscriptSettings: {},
                         videoImageSettings: {}
                     });
                 return view.render().$el;

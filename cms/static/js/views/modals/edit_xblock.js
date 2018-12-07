@@ -3,9 +3,9 @@
  * It is invoked using the edit method which is passed an existing rendered xblock,
  * and upon save an optional refresh function can be invoked to update the display.
  */
-define(['jquery', 'underscore', 'gettext', 'js/views/modals/base_modal', 'common/js/components/utils/view_utils',
-    'js/views/utils/xblock_utils', 'js/views/xblock_editor'],
-    function($, _, gettext, BaseModal, ViewUtils, XBlockViewUtils, XBlockEditorView) {
+define(['jquery', 'underscore', 'backbone', 'gettext', 'js/views/modals/base_modal',
+    'common/js/components/utils/view_utils', 'js/views/utils/xblock_utils', 'js/views/xblock_editor'],
+    function($, _, Backbone, gettext, BaseModal, ViewUtils, XBlockViewUtils, XBlockEditorView) {
         'use strict';
 
         var EditXBlockModal = BaseModal.extend({
@@ -139,8 +139,8 @@ define(['jquery', 'underscore', 'gettext', 'js/views/modals/base_modal', 'common
 
             changeMode: function(event) {
                 this.removeCheatsheetVisibility();
-                var parent = $(event.target.parentElement),
-                    mode = parent.data('mode');
+                var $parent = $(event.target.parentElement),
+                    mode = $parent.data('mode');
                 event.preventDefault();
                 this.selectMode(mode);
             },
@@ -181,6 +181,9 @@ define(['jquery', 'underscore', 'gettext', 'js/views/modals/base_modal', 'common
             },
 
             hide: function() {
+                // Notify child views to stop listening events
+                Backbone.trigger('xblock:editorModalHidden');
+
                 BaseModal.prototype.hide.call(this);
 
                 // Notify the runtime that the modal has been hidden
@@ -196,12 +199,12 @@ define(['jquery', 'underscore', 'gettext', 'js/views/modals/base_modal', 'common
             },
 
             removeCheatsheetVisibility: function() {
-                var cheatsheet = $('article.simple-editor-open-ended-cheatsheet');
-                if (cheatsheet.length === 0) {
-                    cheatsheet = $('article.simple-editor-cheatsheet');
+                var $cheatsheet = $('article.simple-editor-open-ended-cheatsheet');
+                if ($cheatsheet.length === 0) {
+                    $cheatsheet = $('article.simple-editor-cheatsheet');
                 }
-                if (cheatsheet.hasClass('shown')) {
-                    cheatsheet.removeClass('shown');
+                if ($cheatsheet.hasClass('shown')) {
+                    $cheatsheet.removeClass('shown');
                     $('.modal-content').removeClass('cheatsheet-is-shown');
                 }
             }

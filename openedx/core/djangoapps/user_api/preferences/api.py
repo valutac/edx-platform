@@ -2,8 +2,6 @@
 API for managing user preferences.
 """
 import logging
-import analytics
-from eventtracking import tracker
 
 from django.conf import settings
 from django.core.exceptions import ObjectDoesNotExist
@@ -14,15 +12,17 @@ from django.utils.translation import ugettext_noop
 
 from openedx.core.lib.time_zone_utils import get_display_time_zone
 from pytz import common_timezones, common_timezones_set, country_timezones
+from six import text_type
+
 from student.models import User, UserProfile
-from request_cache import get_request_or_stub
+from track import segment
 from ..errors import (
     UserAPIInternalError, UserAPIRequestError, UserNotFound, UserNotAuthorized,
     PreferenceValidationError, PreferenceUpdateError, CountryCodeError
 )
 from ..helpers import intercept_errors, serializer_is_dirty
 from ..models import UserOrgTag, UserPreference
-from ..serializers import UserSerializer, RawUserPreferenceSerializer
+from ..serializers import RawUserPreferenceSerializer
 
 log = logging.getLogger(__name__)
 
@@ -267,7 +267,7 @@ def update_email_opt_in(user, org, opt_in):
         if hasattr(settings, 'LMS_SEGMENT_KEY') and settings.LMS_SEGMENT_KEY:
             _track_update_email_opt_in(user.id, org, opt_in)
     except IntegrityError as err:
-        log.warn(u"Could not update organization wide preference due to IntegrityError: {}".format(err.message))
+        log.warning(u"Could not update organization wide preference due to IntegrityError: {}".format(text_type(err)))
 
 
 def _track_update_email_opt_in(user_id, organization, opt_in):
@@ -283,21 +283,13 @@ def _track_update_email_opt_in(user_id, organization, opt_in):
 
     """
     event_name = 'edx.bi.user.org_email.opted_in' if opt_in else 'edx.bi.user.org_email.opted_out'
-    tracking_context = tracker.get_tracker().resolve_context()
-
-    analytics.track(
+    segment.track(
         user_id,
         event_name,
         {
             'category': 'communication',
             'label': organization
         },
-        context={
-            'ip': tracking_context.get('ip'),
-            'Google Analytics': {
-                'clientId': tracking_context.get('client_id')
-            }
-        }
     )
 
 
@@ -314,12 +306,13 @@ def _get_authorized_user(requesting_user, username=None, allow_staff=False):
             # Otherwise, treat this as a request against a separate user
             username = requesting_user.username
 
+    _check_authorized(requesting_user, username, allow_staff)
+
     try:
         existing_user = User.objects.get(username=username)
     except ObjectDoesNotExist:
         raise UserNotFound()
 
-    _check_authorized(requesting_user, username, allow_staff)
     return existing_user
 
 
@@ -373,7 +366,6 @@ def validate_user_preference_serializer(serializer, preference_key, preference_v
         PreferenceValidationError: the supplied key and/or value for a user preference are invalid.
     """
     if preference_value is None or unicode(preference_value).strip() == '':
-        # pylint: disable=translation-of-non-string
         format_string = ugettext_noop(u"Preference '{preference_key}' cannot be set to an empty value.")
         raise PreferenceValidationError({
             preference_key: {

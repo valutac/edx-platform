@@ -6,8 +6,8 @@ import unittest
 
 import ddt
 from django.conf import settings
-from django.core.urlresolvers import reverse
-from nose.plugins.attrib import attr
+from django.urls import reverse
+from django.utils.timezone import now
 from opaque_keys.edx import locator
 from pytz import UTC
 
@@ -17,18 +17,19 @@ from openedx.core.djangoapps.site_configuration.tests.test_util import with_site
 from shoppingcart.models import DonationConfiguration
 from student.models import CourseEnrollment, DashboardConfiguration
 from student.tests.factories import UserFactory
-from student.views import _get_recently_enrolled_courses, get_course_enrollments
+from student.views import get_course_enrollments
+from student.views.dashboard import _get_recently_enrolled_courses
 from xmodule.modulestore.tests.django_utils import ModuleStoreTestCase
 from xmodule.modulestore.tests.factories import CourseFactory
 
 
-@attr(shard=3)
 @unittest.skipUnless(settings.ROOT_URLCONF == 'lms.urls', 'Test only valid in lms')
 @ddt.ddt
 class TestRecentEnrollments(ModuleStoreTestCase, XssTestMixin):
     """
     Unit tests for getting the list of courses for a logged in user
     """
+    shard = 3
     PASSWORD = 'test'
 
     def setUp(self):
@@ -43,7 +44,7 @@ class TestRecentEnrollments(ModuleStoreTestCase, XssTestMixin):
         # Old Course
         old_course_location = locator.CourseLocator('Org0', 'Course0', 'Run0')
         __, enrollment = self._create_course_and_enrollment(old_course_location)
-        enrollment.created = datetime.datetime(1900, 12, 31, 0, 0, 0, 0)
+        enrollment.created = datetime.datetime(1900, 12, 31, 0, 0, 0, 0, tzinfo=UTC)
         enrollment.save()
 
         # New Course
@@ -107,7 +108,7 @@ class TestRecentEnrollments(ModuleStoreTestCase, XssTestMixin):
                 'Run{num}'.format(num=idx)
             )
             course, enrollment = self._create_course_and_enrollment(course_location)
-            enrollment.created = datetime.datetime.now(UTC) - datetime.timedelta(seconds=seconds_past)
+            enrollment.created = now() - datetime.timedelta(seconds=seconds_past)
             enrollment.save()
             courses.append(course)
 

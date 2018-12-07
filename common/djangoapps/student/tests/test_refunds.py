@@ -11,20 +11,18 @@ import pytz
 # Explicitly import the cache from ConfigurationModel so we can reset it after each test
 from config_models.models import cache
 from django.conf import settings
-from django.core.urlresolvers import reverse
+from django.urls import reverse
 from django.test.client import Client
 from django.test.utils import override_settings
-from edx_rest_api_client.exceptions import SlumberBaseException
 from mock import patch
-from slumber.exceptions import HttpClientError, HttpServerError
 
+from lms.djangoapps.certificates.models import CertificateStatuses, GeneratedCertificate
+from lms.djangoapps.certificates.tests.factories import GeneratedCertificateFactory
 # These imports refer to lms djangoapps.
 # Their testcases are only run under lms.
 from course_modes.tests.factories import CourseModeFactory
-from certificates.models import CertificateStatuses, GeneratedCertificate  # pylint: disable=import-error
-from certificates.tests.factories import GeneratedCertificateFactory  # pylint: disable=import-error
 from openedx.core.djangoapps.commerce.utils import ECOMMERCE_DATE_FORMAT
-from student.models import CourseEnrollment, CourseEnrollmentAttribute
+from student.models import CourseEnrollment
 from student.tests.factories import UserFactory
 from xmodule.modulestore.tests.django_utils import SharedModuleStoreTestCase
 from xmodule.modulestore.tests.factories import CourseFactory
@@ -149,12 +147,12 @@ class RefundableTest(SharedModuleStoreTestCase):
         )
 
         self.enrollment.course_overview.start = course_start
-        self.enrollment.attributes.add(CourseEnrollmentAttribute(
+        self.enrollment.attributes.create(
             enrollment=self.enrollment,
             namespace='order',
             name='order_number',
             value=self.ORDER_NUMBER
-        ))
+        )
 
         with patch('student.models.EnrollmentRefundConfiguration.current') as config:
             instance = config.return_value
@@ -185,27 +183,13 @@ class RefundableTest(SharedModuleStoreTestCase):
 
         # creating multiple attributes for same order.
         for attribute_count in range(2):  # pylint: disable=unused-variable
-            self.enrollment.attributes.add(CourseEnrollmentAttribute(
+            self.enrollment.attributes.create(
                 enrollment=self.enrollment,
                 namespace='order',
                 name='order_number',
                 value=self.ORDER_NUMBER
-            ))
+            )
 
         self.client.login(username=self.user.username, password=self.USER_PASSWORD)
-        resp = self.client.post(reverse('student.views.dashboard', args=[]))
+        resp = self.client.post(reverse('dashboard', args=[]))
         self.assertEqual(resp.status_code, 200)
-
-    @ddt.data(HttpServerError, HttpClientError, SlumberBaseException)
-    @override_settings(ECOMMERCE_API_URL=TEST_API_URL)
-    def test_refund_cutoff_date_with_api_error(self, exception):
-        """ Verify that dashboard will not throw internal server error if HttpClientError
-        raised while getting order detail for ecommerce.
-        """
-        # importing this after overriding value of ECOMMERCE_API_URL
-        from commerce.tests.mocks import mock_order_endpoint
-
-        self.client.login(username=self.user.username, password=self.USER_PASSWORD)
-        with mock_order_endpoint(order_number=self.ORDER_NUMBER, exception=exception, reset_on_exit=False):
-            response = self.client.post(reverse('student.views.dashboard', args=[]))
-            self.assertEqual(response.status_code, 200)

@@ -10,16 +10,17 @@ from django.conf import settings
 from django.contrib.auth.models import User
 from django.core.exceptions import ObjectDoesNotExist
 from django.core.serializers.json import DjangoJSONEncoder
-from django.core.urlresolvers import reverse
+from django.urls import reverse
 from django.db.models import Count, Q
 from edx_proctoring.api import get_exam_violation_report
 from opaque_keys.edx.keys import UsageKey
+from six import text_type
 
 import xmodule.graders as xmgraders
-from certificates.models import CertificateStatuses, GeneratedCertificate
+from lms.djangoapps.certificates.models import CertificateStatuses, GeneratedCertificate
 from courseware.models import StudentModule
 from lms.djangoapps.grades.context import grading_context_for_course
-from lms.djangoapps.verify_student.models import SoftwareSecurePhotoVerification
+from lms.djangoapps.verify_student.services import IDVerificationService
 from openedx.core.djangoapps.site_configuration import helpers as configuration_helpers
 from shoppingcart.models import (
     CouponRedemption,
@@ -168,7 +169,7 @@ def sale_record_features(course_id, features):
             course_reg_dict = dict((feature, None)
                                    for feature in course_reg_features)
 
-        course_reg_dict['course_id'] = course_id.to_deprecated_string()
+        course_reg_dict['course_id'] = text_type(course_id)
         course_reg_dict.update({'codes': ", ".join(codes)})
         sale_dict.update(dict(course_reg_dict.items()))
 
@@ -199,6 +200,7 @@ def issued_certificates(course_key, features):
     # Report run date
     for data in generated_certificates:
         data['report_run_date'] = report_run_date
+        data['course_id'] = str(data['course_id'])
 
     return generated_certificates
 
@@ -284,9 +286,8 @@ def enrolled_students_features(course_key, features):
         if include_enrollment_mode or include_verification_status:
             enrollment_mode = CourseEnrollment.enrollment_mode_for_user(student, course_key)[0]
             if include_verification_status:
-                student_dict['verification_status'] = SoftwareSecurePhotoVerification.verification_status_for_user(
+                student_dict['verification_status'] = IDVerificationService.verification_status_for_user(
                     student,
-                    course_key,
                     enrollment_mode
                 )
             if include_enrollment_mode:
@@ -400,12 +401,12 @@ def coupon_codes_features(features, coupons_list, course_id):
         # They have not been redeemed yet
 
         coupon_dict['expiration_date'] = coupon.display_expiry_date
-        coupon_dict['course_id'] = coupon_dict['course_id'].to_deprecated_string()
+        coupon_dict['course_id'] = text_type(coupon_dict['course_id'])
         return coupon_dict
     return [extract_coupon(coupon, features) for coupon in coupons_list]
 
 
-def list_problem_responses(course_key, problem_location):
+def list_problem_responses(course_key, problem_location, limit_responses=None):
     """
     Return responses to a given problem as a dict.
 
@@ -420,7 +421,10 @@ def list_problem_responses(course_key, problem_location):
     where `state` represents a student's response to the problem
     identified by `problem_location`.
     """
-    problem_key = UsageKey.from_string(problem_location)
+    if isinstance(problem_location, UsageKey):
+        problem_key = problem_location
+    else:
+        problem_key = UsageKey.from_string(problem_location)
     # Are we dealing with an "old-style" problem location?
     run = problem_key.run
     if not run:
@@ -433,6 +437,8 @@ def list_problem_responses(course_key, problem_location):
         module_state_key=problem_key
     )
     smdat = smdat.order_by('student')
+    if limit_responses is not None:
+        smdat = smdat[:limit_responses]
 
     return [
         {'username': response.student.username, 'state': response.state}
@@ -488,7 +494,7 @@ def course_registration_features(features, registration_codes, csv_type):
             except ObjectDoesNotExist:
                 pass
 
-        course_registration_dict['course_id'] = course_registration_dict['course_id'].to_deprecated_string()
+        course_registration_dict['course_id'] = text_type(course_registration_dict['course_id'])
         return course_registration_dict
     return [extract_course_registration(code, features, csv_type) for code in registration_codes]
 
@@ -516,9 +522,9 @@ def dump_grading_context(course):
             subgrader.index = 1
             graders[subgrader.type] = subgrader
     msg += hbar
-    msg += "Listing grading context for course %s\n" % course.id.to_deprecated_string()
+    msg += "Listing grading context for course %s\n" % text_type(course.id)
 
-    gcontext = grading_context_for_course(course.id)
+    gcontext = grading_context_for_course(course)
     msg += "graded sections:\n"
 
     msg += '%s\n' % gcontext['all_graded_subsections_by_type'].keys()
@@ -541,6 +547,6 @@ def dump_grading_context(course):
             msg += "      %s (format=%s, Assignment=%s%s)\n"\
                 % (sdesc.display_name, frmat, aname, notes)
     msg += "all graded blocks:\n"
-    msg += "length=%d\n" % len(gcontext['all_graded_blocks'])
+    msg += "length=%d\n" % gcontext['count_all_graded_blocks']
     msg = '<pre>%s</pre>' % msg.replace('<', '&lt;')
     return msg

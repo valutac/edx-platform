@@ -11,7 +11,8 @@ from operator import itemgetter
 from contentstore.utils import reverse_course_url, reverse_usage_url
 from contentstore.course_group_config import GroupConfiguration, CONTENT_GROUP_CONFIGURATION_NAME
 from contentstore.tests.utils import CourseTestCase
-from xmodule.partitions.partitions import Group, UserPartition
+from openedx.features.content_type_gating.partitions import CONTENT_GATING_PARTITION_ID
+from xmodule.partitions.partitions import Group, UserPartition, ENROLLMENT_TRACK_PARTITION_ID
 from xmodule.modulestore.tests.factories import CourseFactory, ItemFactory
 from xmodule.validation import StudioValidation, StudioValidationMessage
 from xmodule.modulestore.django import modulestore
@@ -168,6 +169,8 @@ class GroupConfigurationsBaseTestCase(object):
     """
     Mixin with base test cases for the group configurations.
     """
+    shard = 1
+
     def _remove_ids(self, content):
         """
         Remove ids from the response. We cannot predict IDs, because they're
@@ -236,10 +239,13 @@ class GroupConfigurationsBaseTestCase(object):
         self.assertIn("error", content)
 
 
+@ddt.ddt
 class GroupConfigurationsListHandlerTestCase(CourseTestCase, GroupConfigurationsBaseTestCase, HelperMethods):
     """
     Test cases for group_configurations_list_handler.
     """
+    shard = 1
+
     def _url(self):
         """
         Return url for the handler.
@@ -325,12 +331,28 @@ class GroupConfigurationsListHandlerTestCase(CourseTestCase, GroupConfigurations
         self.reload_course()
         self.assertEqual(len(self.course.user_partitions), 0)
 
+    @ddt.data('content_type_gate', 'enrollment_track')
+    def test_cannot_create_restricted_group_configuration(self, scheme_id):
+        """
+        Test that you cannot create a restricted group configuration.
+        """
+        group_config = dict(GROUP_CONFIGURATION_JSON)
+        group_config['scheme'] = scheme_id
+        group_config.setdefault('parameters', {})['course_id'] = unicode(self.course.id)
+        response = self.client.ajax_post(
+            self._url(),
+            data=group_config
+        )
+        self.assertEqual(response.status_code, 400)
 
+
+@ddt.ddt
 class GroupConfigurationsDetailHandlerTestCase(CourseTestCase, GroupConfigurationsBaseTestCase, HelperMethods):
     """
     Test cases for group_configurations_detail_handler.
     """
 
+    shard = 1
     ID = 0
 
     def _url(self, cid=-1):
@@ -628,12 +650,49 @@ class GroupConfigurationsDetailHandlerTestCase(CourseTestCase, GroupConfiguratio
         self.assertEqual(len(user_partititons), 2)
         self.assertEqual(user_partititons[0].name, 'Name 0')
 
+    @ddt.data('content_type_gate', 'enrollment_track')
+    def test_cannot_create_restricted_group_configuration(self, scheme_id):
+        """
+        Test that you cannot create a restricted group configuration.
+        """
+        group_config = dict(GROUP_CONFIGURATION_JSON)
+        group_config['scheme'] = scheme_id
+        group_config.setdefault('parameters', {})['course_id'] = unicode(self.course.id)
+        response = self.client.ajax_post(
+            self._url(),
+            data=group_config
+        )
+        self.assertEqual(response.status_code, 400)
+
+    @ddt.data(
+        ('content_type_gate', CONTENT_GATING_PARTITION_ID),
+        ('enrollment_track', ENROLLMENT_TRACK_PARTITION_ID),
+    )
+    @ddt.unpack
+    def test_cannot_edit_restricted_group_configuration(self, scheme_id, partition_id):
+        """
+        Test that you cannot edit a restricted group configuration.
+        """
+        group_config = dict(GROUP_CONFIGURATION_JSON)
+        group_config['scheme'] = scheme_id
+        group_config.setdefault('parameters', {})['course_id'] = unicode(self.course.id)
+        response = self.client.put(
+            self._url(cid=partition_id),
+            data=json.dumps(group_config),
+            content_type="application/json",
+            HTTP_ACCEPT="application/json",
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        self.assertEqual(response.status_code, 400)
+
 
 @ddt.ddt
 class GroupConfigurationsUsageInfoTestCase(CourseTestCase, HelperMethods):
     """
     Tests for usage information of configurations and content groups.
     """
+    shard = 1
+
     def _get_user_partition(self, scheme):
         """
         Returns the first user partition with the specified scheme.
@@ -1066,6 +1125,8 @@ class GroupConfigurationsValidationTestCase(CourseTestCase, HelperMethods):
     """
     Tests for validation in Group Configurations.
     """
+    shard = 1
+
     @patch('xmodule.split_test_module.SplitTestDescriptor.validate_split_test')
     def verify_validation_add_usage_info(self, expected_result, mocked_message, mocked_validation_messages):
         """

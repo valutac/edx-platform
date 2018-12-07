@@ -174,6 +174,25 @@ class PaginationTestCase(AssetsTestCase):
         self.assert_correct_filter_response(self.url, 'asset_type', 'OTHER')
         self.assert_correct_filter_response(
             self.url, 'asset_type', 'Documents')
+        self.assert_correct_filter_response(
+            self.url, 'asset_type', 'Documents,Images')
+        self.assert_correct_filter_response(
+            self.url, 'asset_type', 'Documents,OTHER')
+
+        self.assert_correct_text_search_response(self.url, 'asset-1.txt', 1)
+        self.assert_correct_text_search_response(self.url, 'asset-1', 1)
+        self.assert_correct_text_search_response(self.url, 'AsSeT-1', 1)
+        self.assert_correct_text_search_response(self.url, '.txt', 3)
+        self.assert_correct_text_search_response(self.url, '2', 1)
+        self.assert_correct_text_search_response(self.url, 'asset 2', 1)
+        self.assert_correct_text_search_response(self.url, '2 asset', 1)
+        self.assert_correct_text_search_response(self.url, '*.txt', 0)
+        self.assert_correct_asset_response(self.url + "?text_search=", 0, 4, 4)
+
+        #Verify invalid request parameters
+        self.assert_invalid_parameters_error(self.url, 'asset_type', 'edX')
+        self.assert_invalid_parameters_error(self.url, 'asset_type', 'edX, OTHER')
+        self.assert_invalid_parameters_error(self.url, 'asset_type', 'edX, Images')
 
         # Verify querying outside the range of valid pages
         self.assert_correct_asset_response(
@@ -182,6 +201,10 @@ class PaginationTestCase(AssetsTestCase):
             self.url + "?page_size=2&page=2", 2, 2, 4)
         self.assert_correct_asset_response(
             self.url + "?page_size=3&page=1", 3, 1, 4)
+        self.assert_correct_asset_response(
+            self.url + "?page_size=1&page=5&asset_type=OTHER", 0, 1, 1)
+        self.assert_correct_asset_response(
+            self.url + "?page_size=1&page=5&asset_type=Images", 5, 0, 0)
 
     @mock.patch('xmodule.contentstore.mongo.MongoContentStore.get_all_content_for_course')
     def test_mocked_filtered_response(self, mock_get_all_content_for_course):
@@ -233,6 +256,8 @@ class PaginationTestCase(AssetsTestCase):
             url + '?sort=' + sort + '&direction=' + direction, HTTP_ACCEPT='application/json')
         json_response = json.loads(resp.content)
         assets_response = json_response['assets']
+        self.assertEquals(sort, json_response['sort'])
+        self.assertEquals(direction, json_response['direction'])
         name1 = assets_response[0][sort]
         name2 = assets_response[1][sort]
         name3 = assets_response[2][sort]
@@ -247,24 +272,64 @@ class PaginationTestCase(AssetsTestCase):
         """
         Get from the url w/ a filter option and ensure items honor that filter
         """
-        requested_file_types = settings.FILES_AND_UPLOAD_TYPE_FILTERS.get(
-            filter_value, None)
+
+        filter_value_split = filter_value.split(',') if filter_value else []
+
+        requested_file_extensions = []
+        all_file_extensions = []
+
+        for requested_filter in filter_value_split:
+            if requested_filter == 'OTHER':
+                for file_type in settings.FILES_AND_UPLOAD_TYPE_FILTERS:
+                    all_file_extensions.extend(file_type)
+            else:
+                file_extensions = settings.FILES_AND_UPLOAD_TYPE_FILTERS.get(
+                    requested_filter, None)
+                if file_extensions is not None:
+                    requested_file_extensions.extend(file_extensions)
+
         resp = self.client.get(
             url + '?' + filter_type + '=' + filter_value, HTTP_ACCEPT='application/json')
         json_response = json.loads(resp.content)
         assets_response = json_response['assets']
+        self.assertEquals(filter_value_split, json_response['assetTypes'])
+
         if filter_value is not '':
             content_types = [asset['content_type'].lower()
                              for asset in assets_response]
-            if filter_value is 'OTHER':
-                all_file_type_extensions = []
-                for file_type in settings.FILES_AND_UPLOAD_TYPE_FILTERS:
-                    all_file_type_extensions.extend(file_type)
+            if 'OTHER' in filter_value_split:
                 for content_type in content_types:
-                    self.assertNotIn(content_type, all_file_type_extensions)
+                    # content_type is either not any defined type (i.e. OTHER) or is a defined type (if multiple
+                    # parameters including OTHER are used)
+                    self.assertTrue(content_type in requested_file_extensions or content_type not in all_file_extensions)
             else:
                 for content_type in content_types:
-                    self.assertIn(content_type, requested_file_types)
+                    self.assertIn(content_type, requested_file_extensions)
+
+    def assert_invalid_parameters_error(self, url, filter_type, filter_value):
+        """
+        Get from the url w/ invalid filter option(s) and ensure error is received
+        """
+        resp = self.client.get(
+            url + '?' + filter_type + '=' + filter_value, HTTP_ACCEPT='application/json')
+        self.assertEquals(resp.status_code, 400)
+
+    def assert_correct_text_search_response(self, url, text_search, number_matches):
+        """
+        Get from the url w/ a text_search option and ensure items honor that search query
+        """
+        resp = self.client.get(
+            url + '?text_search=' + text_search, HTTP_ACCEPT='application/json')
+        json_response = json.loads(resp.content)
+        assets_response = json_response['assets']
+        self.assertEquals(text_search, json_response['textSearch'])
+        self.assertEquals(len(assets_response), number_matches)
+
+        text_search_tokens = text_search.split()
+
+        for asset_response in assets_response:
+            for token in text_search_tokens:
+                self.assertTrue(token.lower() in asset_response['display_name'].lower())
 
 
 @ddt

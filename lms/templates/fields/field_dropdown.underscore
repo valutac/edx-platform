@@ -32,13 +32,19 @@
                 <% }); %>
             <% }); %>
         </select>
-        <button class="u-field-value-display">
+        <button class="u-field-value-display" aria-haspopup="true">
             <span class="sr"><%- screenReaderTitle %> &nbsp;</span>
             <span class="u-field-value-readonly"></span>
             <span class="sr">&nbsp; <%- gettext('Click to edit') %></span>
         </button>
     <% } %>
 </span>
+
+<% if (editable != 'never' && id === 'account_privacy') { %>
+    <button class="btn btn-change-privacy hidden">
+        <span><%- gettext('Save') %></span>
+    </button>
+<% } %>
 
 <span class="u-field-message" id="u-field-message-<%- id %>">
     <span class="u-field-message-notification" aria-live="polite"></span>

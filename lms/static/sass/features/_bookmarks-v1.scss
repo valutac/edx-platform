@@ -48,10 +48,14 @@ $bookmarked-icon: "\f02e"; // .fa-bookmark
   // Rules for bookmark button's different styles
   .bookmark-button-wrapper {
     margin-bottom: ($baseline * 1.5);
+
+    @extend %ui-print-excluded;
   }
 
   .bookmark-button {
     &::before {
+      @include padding-right($baseline / 4);
+
       content: $bookmark-icon;
       font-family: FontAwesome;
     }

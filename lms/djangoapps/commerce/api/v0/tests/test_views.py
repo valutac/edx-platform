@@ -8,26 +8,25 @@ import ddt
 import mock
 import pytz
 from django.conf import settings
-from django.core.urlresolvers import reverse
+from django.urls import reverse, reverse_lazy
 from django.test import TestCase
 from django.test.utils import override_settings
-from edx_rest_api_client import exceptions
-from nose.plugins.attrib import attr
 
-from commerce.api.v0.views import SAILTHRU_CAMPAIGN_COOKIE
-from commerce.constants import Messages
-from commerce.tests.mocks import mock_basket_order
-from commerce.tests.test_views import UserMixin
 from course_modes.models import CourseMode
+from course_modes.tests.factories import CourseModeFactory
 from enrollment.api import get_enrollment
 from openedx.core.djangoapps.embargo.test_utils import restrict_course
 from openedx.core.lib.django_test_client_utils import get_absolute_url
 from student.models import CourseEnrollment
-from course_modes.tests.factories import CourseModeFactory
 from student.tests.tests import EnrollmentEventTestMixin
 from xmodule.modulestore.django import modulestore
 from xmodule.modulestore.tests.django_utils import ModuleStoreTestCase
 from xmodule.modulestore.tests.factories import CourseFactory
+
+from ....constants import Messages
+from ....tests.mocks import mock_basket_order
+from ....tests.test_views import UserMixin
+from ..views import SAILTHRU_CAMPAIGN_COOKIE
 
 UTM_COOKIE_NAME = 'edx.test.utm'
 UTM_COOKIE_CONTENTS = {
@@ -35,12 +34,13 @@ UTM_COOKIE_CONTENTS = {
 }
 
 
-@attr(shard=1)
 @ddt.ddt
 class BasketsViewTests(EnrollmentEventTestMixin, UserMixin, ModuleStoreTestCase):
     """
     Tests for the commerce Baskets view.
     """
+    shard = 1
+
     def _post_to_view(self, course_id=None, marketing_email_opt_in=False, include_utm_cookie=False):
         """
         POST to the view being tested.
@@ -135,7 +135,7 @@ class BasketsViewTests(EnrollmentEventTestMixin, UserMixin, ModuleStoreTestCase)
         """
         # Set user's active flag
         self.user.is_active = user_is_active
-        self.user.save()  # pylint: disable=no-member
+        self.user.save()
         response = self._post_to_view()
 
         # Validate the response content
@@ -250,7 +250,7 @@ class BasketsViewTests(EnrollmentEventTestMixin, UserMixin, ModuleStoreTestCase)
         self.assertFalse(CourseEnrollment.is_enrolled(self.user, self.course.id))
         self.assertIsNotNone(get_enrollment(self.user.username, unicode(self.course.id)))
 
-    @mock.patch('commerce.api.v0.views.update_email_opt_in')
+    @mock.patch('lms.djangoapps.commerce.api.v0.views.update_email_opt_in')
     @ddt.data(*itertools.product((False, True), (False, True), (False, True)))
     @ddt.unpack
     def test_marketing_email_opt_in(self, is_opt_in, has_sku, is_exception, mock_update):
@@ -275,16 +275,16 @@ class BasketsViewTests(EnrollmentEventTestMixin, UserMixin, ModuleStoreTestCase)
         Verifies that the view returns HTTP 406 when a course is closed.
         """
         self.course.enrollment_end = datetime.now(pytz.UTC) - timedelta(days=1)
-        modulestore().update_item(self.course, self.user.id)  # pylint:disable=no-member
+        modulestore().update_item(self.course, self.user.id)
         self.assertEqual(self._post_to_view().status_code, 406)
 
 
-@attr(shard=1)
 class BasketOrderViewTests(UserMixin, TestCase):
     """ Tests for the basket order view. """
     view_name = 'commerce_api:v0:baskets:retrieve_order'
     MOCK_ORDER = {'number': 1}
-    path = reverse(view_name, kwargs={'basket_id': 1})
+    path = reverse_lazy(view_name, kwargs={'basket_id': 1})
+    shard = 1
 
     def setUp(self):
         super(BasketOrderViewTests, self).setUp()
@@ -302,7 +302,7 @@ class BasketOrderViewTests(UserMixin, TestCase):
 
     def test_order_not_found(self):
         """ If the order is not found, the view should return a 404. """
-        with mock_basket_order(basket_id=1, exception=exceptions.HttpNotFoundError):
+        with mock_basket_order(basket_id=1, status=404):
             response = self.client.get(self.path)
         self.assertEqual(response.status_code, 404)
 

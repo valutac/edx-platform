@@ -1,27 +1,31 @@
 import datetime
-from itertools import groupby
-from logging import getLogger
-from urlparse import urlparse
+import logging
 
-from celery.task import task
+from celery import task
 from django.conf import settings
 from django.contrib.auth.models import User
 from django.contrib.sites.models import Site
 from django.core.exceptions import ValidationError
-from django.core.urlresolvers import reverse
-from django.db.models import Min
+
 from django.db.utils import DatabaseError
-from django.utils.http import urlquote
+
+from celery_utils.logged_task import LoggedTask
+from celery_utils.persist_on_failure import LoggedPersistOnFailureTask
 from edx_ace import ace
-from edx_ace.message import Message, MessageType
-from edx_ace.recipient import Recipient
-from edx_ace.utils.date import deserialize
+from edx_ace.message import Message
+from edx_ace.utils.date import deserialize, serialize
+from edx_django_utils.monitoring import set_custom_metric
+from eventtracking import tracker
 from opaque_keys.edx.keys import CourseKey
 
-from edxmako.shortcuts import marketing_link
+from openedx.core.djangoapps.schedules import message_types
 from openedx.core.djangoapps.schedules.models import Schedule, ScheduleConfig
+from openedx.core.djangoapps.schedules import resolvers
+from openedx.core.lib.celery.task_utils import emulate_http_request
+from track import segment
 
-log = getLogger(__name__)
+
+LOG = logging.getLogger(__name__)
 
 
 ROUTING_KEY = getattr(settings, 'ACE_ROUTING_KEY', None)
@@ -31,7 +35,12 @@ KNOWN_RETRY_ERRORS = (  # Errors we expect occasionally that could resolve on re
 )
 
 
-@task(bind=True, default_retry_delay=30, routing_key=ROUTING_KEY)
+RECURRING_NUDGE_LOG_PREFIX = 'Recurring Nudge'
+UPGRADE_REMINDER_LOG_PREFIX = 'Upgrade Reminder'
+COURSE_UPDATE_LOG_PREFIX = 'Course Update'
+
+
+@task(base=LoggedPersistOnFailureTask, bind=True, default_retry_delay=30, routing_key=ROUTING_KEY)
 def update_course_schedules(self, **kwargs):
     course_key = CourseKey.from_string(kwargs['course_id'])
     new_start_date = deserialize(kwargs['new_start_date_str'])
@@ -42,133 +51,226 @@ def update_course_schedules(self, **kwargs):
             start=new_start_date,
             upgrade_deadline=new_upgrade_deadline
         )
-    except Exception as exc:  # pylint: disable=broad-except
+    except Exception as exc:
         if not isinstance(exc, KNOWN_RETRY_ERRORS):
-            log.exception("Unexpected failure: task id: %s, kwargs=%s".format(self.request.id, kwargs))
+            LOG.exception("Unexpected failure: task id: %s, kwargs=%s".format(self.request.id, kwargs))
         raise self.retry(kwargs=kwargs, exc=exc)
 
 
-class RecurringNudge(MessageType):
-    def __init__(self, day, *args, **kwargs):
-        super(RecurringNudge, self).__init__(*args, **kwargs)
-        self.name = "recurringnudge_day{}".format(day)
+class ScheduleMessageBaseTask(LoggedTask):
+    """
+    Base class for top-level Schedule tasks that create subtasks
+    for each Bin.
+    """
+    ignore_result = True
+    routing_key = ROUTING_KEY
+    num_bins = resolvers.DEFAULT_NUM_BINS
+    enqueue_config_var = None  # define in subclass
+    log_prefix = None
+    resolver = None  # define in subclass
+    async_send_task = None  # define in subclass
+
+    @classmethod
+    def log_debug(cls, message, *args, **kwargs):
+        """
+        Wrapper around LOG.debug that prefixes the message.
+        """
+        LOG.debug(cls.log_prefix + ': ' + message, *args, **kwargs)
+
+    @classmethod
+    def log_info(cls, message, *args, **kwargs):
+        """
+        Wrapper around LOG.info that prefixes the message.
+        """
+        LOG.info(cls.log_prefix + ': ' + message, *args, **kwargs)
+
+    @classmethod
+    def enqueue(cls, site, current_date, day_offset, override_recipient_email=None):
+        current_date = resolvers._get_datetime_beginning_of_day(current_date)
+
+        if not cls.is_enqueue_enabled(site):
+            cls.log_info('Message queuing disabled for site %s', site.domain)
+            return
+
+        target_date = current_date + datetime.timedelta(days=day_offset)
+        cls.log_info('Target date = %s', target_date.isoformat())
+        for bin in range(cls.num_bins):
+            task_args = (
+                site.id,
+                serialize(target_date),
+                day_offset,
+                bin,
+                override_recipient_email,
+            )
+            cls.log_info('Launching task with args = %r', task_args)
+            cls().apply_async(
+                task_args,
+                retry=False,
+            )
+
+    @classmethod
+    def is_enqueue_enabled(cls, site):
+        if cls.enqueue_config_var:
+            return getattr(ScheduleConfig.current(site), cls.enqueue_config_var)
+        return False
+
+    def run(
+        self, site_id, target_day_str, day_offset, bin_num, override_recipient_email=None,
+    ):
+        site = Site.objects.select_related('configuration').get(id=site_id)
+        with emulate_http_request(site=site):
+            msg_type = self.make_message_type(day_offset)
+            _annotate_for_monitoring(msg_type, site, bin_num, target_day_str, day_offset)
+            return self.resolver(
+                self.async_send_task,
+                site,
+                deserialize(target_day_str),
+                day_offset,
+                bin_num,
+                override_recipient_email=override_recipient_email,
+            ).send(msg_type)
+
+    def make_message_type(self, day_offset):
+        raise NotImplementedError
 
 
-@task(ignore_result=True, routing_key=ROUTING_KEY)
-def recurring_nudge_schedule_hour(
-    site_id, day, target_hour_str, org_list, exclude_orgs=False, override_recipient_email=None,
-):
-    target_hour = deserialize(target_hour_str)
-    msg_type = RecurringNudge(day)
-
-    for (user, language, context) in _recurring_nudge_schedules_for_hour(target_hour, org_list, exclude_orgs):
-        msg = msg_type.personalize(
-            Recipient(
-                user.username,
-                override_recipient_email or user.email,
-            ),
-            language,
-            context,
-        )
-        _recurring_nudge_schedule_send.apply_async((site_id, str(msg)), retry=False)
-
-
-@task(ignore_result=True, routing_key=ROUTING_KEY)
+@task(base=LoggedTask, ignore_result=True, routing_key=ROUTING_KEY)
 def _recurring_nudge_schedule_send(site_id, msg_str):
-    site = Site.objects.get(pk=site_id)
-    if not ScheduleConfig.current(site).deliver_recurring_nudge:
-        return
-
-    msg = Message.from_string(msg_str)
-    ace.send(msg)
-
-
-def _recurring_nudge_schedules_for_hour(target_hour, org_list, exclude_orgs=False):
-    beginning_of_day = target_hour.replace(hour=0, minute=0, second=0)
-    users = User.objects.filter(
-        courseenrollment__schedule__start__gte=beginning_of_day,
-        courseenrollment__schedule__start__lt=beginning_of_day + datetime.timedelta(days=1),
-        courseenrollment__is_active=True,
-    ).annotate(
-        first_schedule=Min('courseenrollment__schedule__start')
-    ).filter(
-        first_schedule__gte=target_hour,
-        first_schedule__lt=target_hour + datetime.timedelta(minutes=60)
+    _schedule_send(
+        msg_str,
+        site_id,
+        'deliver_recurring_nudge',
+        RECURRING_NUDGE_LOG_PREFIX,
     )
 
-    if org_list is not None:
-        if exclude_orgs:
-            users = users.exclude(courseenrollment__course__org__in=org_list)
-        else:
-            users = users.filter(courseenrollment__course__org__in=org_list)
 
-    schedules = Schedule.objects.select_related(
-        'enrollment__user__profile',
-        'enrollment__course',
-    ).filter(
-        enrollment__user__in=users,
-        start__gte=beginning_of_day,
-        start__lt=beginning_of_day + datetime.timedelta(days=1),
-        enrollment__is_active=True,
-    ).order_by('enrollment__user__id')
-
-    if org_list is not None:
-        if exclude_orgs:
-            schedules = schedules.exclude(enrollment__course__org__in=org_list)
-        else:
-            schedules = schedules.filter(enrollment__course__org__in=org_list)
-
-    if "read_replica" in settings.DATABASES:
-        schedules = schedules.using("read_replica")
-
-    dashboard_relative_url = reverse('dashboard')
-
-    for (user, user_schedules) in groupby(schedules, lambda s: s.enrollment.user):
-        user_schedules = list(user_schedules)
-        course_id_strs = [str(schedule.enrollment.course_id) for schedule in user_schedules]
-
-        def absolute_url(relative_path):
-            return u'{}{}'.format(settings.LMS_ROOT_URL, urlquote(relative_path))
-
-        first_schedule = user_schedules[0]
-        template_context = {
-            'student_name': user.profile.name,
-
-            'course_name': first_schedule.enrollment.course.display_name,
-            'course_url': absolute_url(reverse('course_root', args=[str(first_schedule.enrollment.course_id)])),
-
-            # This is used by the bulk email optout policy
-            'course_ids': course_id_strs,
-
-            # Platform information
-            'homepage_url': encode_url(marketing_link('ROOT')),
-            'dashboard_url': absolute_url(dashboard_relative_url),
-            'template_revision': settings.EDX_PLATFORM_REVISION,
-            'platform_name': settings.PLATFORM_NAME,
-            'contact_mailing_address': settings.CONTACT_MAILING_ADDRESS,
-            'social_media_urls': encode_urls_in_dict(getattr(settings, 'SOCIAL_MEDIA_FOOTER_URLS', {})),
-            'mobile_store_urls': encode_urls_in_dict(getattr(settings, 'MOBILE_STORE_URLS', {})),
-        }
-        yield (user, first_schedule.enrollment.course.language, template_context)
+@task(base=LoggedTask, ignore_result=True, routing_key=ROUTING_KEY)
+def _upgrade_reminder_schedule_send(site_id, msg_str):
+    _schedule_send(
+        msg_str,
+        site_id,
+        'deliver_upgrade_reminder',
+        UPGRADE_REMINDER_LOG_PREFIX,
+    )
 
 
-def encode_url(url):
-    # Sailthru has a bug where URLs that contain "+" characters in their path components are misinterpreted
-    # when GA instrumentation is enabled. We need to percent-encode the path segments of all URLs that are
-    # injected into our templates to work around this issue.
-    parsed_url = urlparse(url)
-    modified_url = parsed_url._replace(path=urlquote(parsed_url.path))
-    return modified_url.geturl()
+@task(base=LoggedTask, ignore_result=True, routing_key=ROUTING_KEY)
+def _course_update_schedule_send(site_id, msg_str):
+    _schedule_send(
+        msg_str,
+        site_id,
+        'deliver_course_update',
+        COURSE_UPDATE_LOG_PREFIX,
+    )
 
 
-def absolute_url(relative_path):
-    root = settings.LMS_ROOT_URL.rstrip('/')
-    relative_path = relative_path.lstrip('/')
-    return encode_url(u'{root}/{path}'.format(root=root, path=relative_path))
+class ScheduleRecurringNudge(ScheduleMessageBaseTask):
+    num_bins = resolvers.RECURRING_NUDGE_NUM_BINS
+    enqueue_config_var = 'enqueue_recurring_nudge'
+    log_prefix = RECURRING_NUDGE_LOG_PREFIX
+    resolver = resolvers.RecurringNudgeResolver
+    async_send_task = _recurring_nudge_schedule_send
+
+    def make_message_type(self, day_offset):
+        return message_types.RecurringNudge(abs(day_offset))
 
 
-def encode_urls_in_dict(mapping):
-    urls = {}
-    for key, value in mapping.iteritems():
-        urls[key] = encode_url(value)
-    return urls
+class ScheduleUpgradeReminder(ScheduleMessageBaseTask):
+    num_bins = resolvers.UPGRADE_REMINDER_NUM_BINS
+    enqueue_config_var = 'enqueue_upgrade_reminder'
+    log_prefix = UPGRADE_REMINDER_LOG_PREFIX
+    resolver = resolvers.UpgradeReminderResolver
+    async_send_task = _upgrade_reminder_schedule_send
+
+    def make_message_type(self, day_offset):
+        return message_types.UpgradeReminder()
+
+
+class ScheduleCourseUpdate(ScheduleMessageBaseTask):
+    num_bins = resolvers.COURSE_UPDATE_NUM_BINS
+    enqueue_config_var = 'enqueue_course_update'
+    log_prefix = COURSE_UPDATE_LOG_PREFIX
+    resolver = resolvers.CourseUpdateResolver
+    async_send_task = _course_update_schedule_send
+
+    def make_message_type(self, day_offset):
+        return message_types.CourseUpdate()
+
+
+def _schedule_send(msg_str, site_id, delivery_config_var, log_prefix):
+    site = Site.objects.select_related('configuration').get(pk=site_id)
+    if _is_delivery_enabled(site, delivery_config_var, log_prefix):
+        msg = Message.from_string(msg_str)
+
+        user = User.objects.get(username=msg.recipient.username)
+        with emulate_http_request(site=site, user=user):
+            _annonate_send_task_for_monitoring(msg)
+            LOG.debug('%s: Sending message = %s', log_prefix, msg_str)
+            ace.send(msg)
+            _track_message_sent(site, user, msg)
+
+
+def _track_message_sent(site, user, msg):
+    properties = {
+        'site': site.domain,
+        'app_label': msg.app_label,
+        'name': msg.name,
+        'language': msg.language,
+        'uuid': unicode(msg.uuid),
+        'send_uuid': unicode(msg.send_uuid),
+        'nonInteraction': 1,
+    }
+    course_ids = msg.context.get('course_ids', [])
+    properties['num_courses'] = len(course_ids)
+    if len(course_ids) > 0:
+        properties['course_ids'] = course_ids[:10]
+        properties['primary_course_id'] = course_ids[0]
+
+    tracking_context = {
+        'host': site.domain,
+        'path': '/',  # make up a value, in order to allow the host to be passed along.
+    }
+    # I wonder if the user of this event should be the recipient, as they are not the ones
+    # who took an action.  Rather, the system is acting, and they are the object.
+    # Admittedly that may be what 'nonInteraction' is meant to address.  But sessionization may
+    # get confused by these events if they're attributed in this way, because there's no way for
+    # this event to get context that would match with what the user might be doing at the moment.
+    # But the events do show up in GA being joined up with existing sessions (i.e. within a half
+    # hour in the past), so they don't always break sessions.  Not sure what happens after these.
+    # We can put the recipient_user_id into the properties, and then export as a custom dimension.
+    with tracker.get_tracker().context(msg.app_label, tracking_context):
+        segment.track(
+            user_id=user.id,
+            event_name='edx.bi.email.sent',
+            properties=properties,
+        )
+
+
+def _is_delivery_enabled(site, delivery_config_var, log_prefix):
+    if getattr(ScheduleConfig.current(site), delivery_config_var, False):
+        return True
+    else:
+        LOG.info('%s: Message delivery disabled for site %s', log_prefix, site.domain)
+
+
+def _annotate_for_monitoring(message_type, site, bin_num, target_day_str, day_offset):
+    # This identifies the type of message being sent, for example: schedules.recurring_nudge3.
+    set_custom_metric('message_name', '{0}.{1}'.format(message_type.app_label, message_type.name))
+    # The domain name of the site we are sending the message for.
+    set_custom_metric('site', site.domain)
+    # This is the "bin" of data being processed. We divide up the work into chunks so that we don't tie up celery
+    # workers for too long. This could help us identify particular bins that are problematic.
+    set_custom_metric('bin', bin_num)
+    # The date we are processing data for.
+    set_custom_metric('target_day', target_day_str)
+    # The number of days relative to the current date to process data for.
+    set_custom_metric('day_offset', day_offset)
+    # A unique identifier for this batch of messages being sent.
+    set_custom_metric('send_uuid', message_type.uuid)
+
+
+def _annonate_send_task_for_monitoring(msg):
+    # A unique identifier for this batch of messages being sent.
+    set_custom_metric('send_uuid', msg.send_uuid)
+    # A unique identifier for this particular message.
+    set_custom_metric('uuid', msg.uuid)

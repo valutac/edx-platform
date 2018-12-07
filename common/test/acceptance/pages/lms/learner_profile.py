@@ -144,8 +144,9 @@ class LearnerProfilePage(FieldsMixin, PageObject):
 
         if privacy != self.privacy:
             query = self.q(css=PROFILE_VISIBILITY_INPUT)
-            select_option_by_value(query, privacy, focus_out=True)
+            select_option_by_value(query, privacy)
             EmptyPromise(lambda: privacy == self.privacy, 'Privacy is set to {}'.format(privacy)).fulfill()
+            self.q(css='.btn-change-privacy').first.click()
             self.wait_for_ajax()
 
             if privacy == 'all_users':
@@ -280,10 +281,6 @@ class LearnerProfilePage(FieldsMixin, PageObject):
         self.browser.execute_script('$(".upload-button-input").css("opacity",1);')
 
         self.wait_for_element_visibility('.upload-button-input', "upload button is visible")
-
-        self.browser.execute_script('$(".upload-submit").show();')
-
-        self.q(css='.upload-submit').first.click()
         self.q(css='.upload-button-input').results[0].send_keys(file_path)
         self.wait_for_ajax()
 

@@ -20,7 +20,7 @@ from instructor_analytics.csvs import format_dictlist
 from openedx.core.djangoapps.course_groups.cohorts import add_user_to_cohort
 from openedx.core.djangoapps.course_groups.models import CourseUserGroup
 from survey.models import SurveyAnswer
-from util.file import UniversalNewlineIterator, course_filename_prefix_generator
+from util.file import UniversalNewlineIterator
 
 from .runner import TaskProgress
 from .utils import UPDATE_STATUS_FAILED, UPDATE_STATUS_SUCCEEDED, upload_csv_to_report_store
@@ -87,7 +87,7 @@ def upload_course_survey_report(_xmodule_instance_args, _entry_id, course_id, _t
     return task_progress.update_task_state(extra_meta=current_step)
 
 
-def upload_proctored_exam_results_report(_xmodule_instance_args, _entry_id, course_id, _task_input, action_name):  # pylint: disable=invalid-name
+def upload_proctored_exam_results_report(_xmodule_instance_args, _entry_id, course_id, _task_input, action_name):
     """
     For a given `course_id`, generate a CSV file containing
     information about proctored exam results, and store using a `ReportStore`.

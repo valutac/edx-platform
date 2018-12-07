@@ -31,32 +31,32 @@
             tagName: 'div',
 
             indicators: {
-                'canEdit': HtmlUtils.joinHtml(
+                canEdit: HtmlUtils.joinHtml(
                     HtmlUtils.HTML('<span class="icon fa fa-pencil message-can-edit" aria-hidden="true"></span><span class="sr">'),  // eslint-disable-line max-len
                     gettext('Editable'),
                     HtmlUtils.HTML('</span>')
                 ),
-                'error': HtmlUtils.joinHtml(
+                error: HtmlUtils.joinHtml(
                     HtmlUtils.HTML('<span class="fa fa-exclamation-triangle message-error" aria-hidden="true"></span><span class="sr">'),  // eslint-disable-line max-len
                     gettext('Error'),
                     HtmlUtils.HTML('</span>')
                 ),
-                'validationError': HtmlUtils.joinHtml(
+                validationError: HtmlUtils.joinHtml(
                     HtmlUtils.HTML('<span class="fa fa-exclamation-triangle message-validation-error" aria-hidden="true"></span><span class="sr">'),  // eslint-disable-line max-len
                     gettext('Validation Error'),
                     HtmlUtils.HTML('</span>')
                 ),
-                'inProgress': HtmlUtils.joinHtml(
+                inProgress: HtmlUtils.joinHtml(
                     HtmlUtils.HTML('<span class="fa fa-spinner fa-pulse message-in-progress" aria-hidden="true"></span><span class="sr">'),  // eslint-disable-line max-len
                     gettext('In Progress'),
                     HtmlUtils.HTML('</span>')
                 ),
-                'success': HtmlUtils.joinHtml(
+                success: HtmlUtils.joinHtml(
                     HtmlUtils.HTML('<span class="fa fa-check message-success" aria-hidden="true"></span><span class="sr">'),  // eslint-disable-line max-len
                     gettext('Success'),
                     HtmlUtils.HTML('</span>')
                 ),
-                'plus': HtmlUtils.joinHtml(
+                plus: HtmlUtils.joinHtml(
                     HtmlUtils.HTML('<span class="fa fa-plus placeholder" aria-hidden="true"></span><span class="sr">'),
                     gettext('Placeholder'),
                     HtmlUtils.HTML('</span>')
@@ -64,11 +64,11 @@
             },
 
             messages: {
-                'canEdit': '',
-                'error': gettext('An error occurred. Please try again.'),
-                'validationError': '',
-                'inProgress': gettext('Saving'),
-                'success': gettext('Your changes have been saved.')
+                canEdit: '',
+                error: gettext('An error occurred. Please try again.'),
+                validationError: '',
+                inProgress: gettext('Saving'),
+                success: gettext('Your changes have been saved.')
             },
 
             constructor: function(options) {
@@ -143,6 +143,9 @@
                 this.showNotificationMessage(successMessage);
 
                 if (this.options.refreshPageOnSave) {
+                    if ("focusNextID" in this.options) {
+                        $.cookie('focus_id', this.options.focusNextID );
+                    }
                     location.reload(true);
                 }
 
@@ -397,7 +400,7 @@
             fieldTemplate: field_dropdown_template,
 
             events: {
-                'click': 'startEditing',
+                click: 'startEditing',
                 'focusout select': 'finishEditing'
             },
 
@@ -458,8 +461,7 @@
                 var value;
                 if (this.editable === 'never') {
                     value = this.modelValueIsSet() ? this.modelValue() : null;
-                }
-                else {
+                } else {
                     value = this.$('.u-field-value select').val();
                 }
                 return value === '' ? null : value;
@@ -483,7 +485,6 @@
                 if (this.modelValueIsSet() === false) {
                     value = this.options.placeholderValue || '';
                 }
-                this.$('.u-field-value').attr('aria-label', this.options.title);
                 this.$('.u-field-value-readonly').text(value);
 
                 if (this.mode === 'display') {
@@ -531,10 +532,10 @@
 
             createGroupOptions: function() {
                 return !(_.isUndefined(this.options.groupOptions)) ? this.options.groupOptions :
-                    [{
-                        groupTitle: null,
-                        selectOptions: this.options.options
-                    }];
+                [{
+                    groupTitle: null,
+                    selectOptions: this.options.options
+                }];
             }
         });
 
@@ -600,10 +601,29 @@
 
             updateCharCount: function() {
                 var curCharCount;
+                var remainingCharCount;
+                var $charCount = $('.u-field-footer .current-char-count');
                 // Update character count for textarea
                 if (this.options.maxCharacters) {
                     curCharCount = $('#u-field-textarea-' + this.options.valueAttribute).val().length;
-                    $('.u-field-footer .current-char-count').text(curCharCount);
+                    remainingCharCount = this.options.maxCharacters - curCharCount;
+                    if (remainingCharCount < 20) {
+                        $charCount.attr({
+                            'aria-live': 'assertive',
+                            'aria-atomic': true
+                        });
+                    }
+                    else if (remainingCharCount < 60) {
+                        $charCount.attr('aria-atomic', 'false');
+                    }
+                    else if (remainingCharCount < 70) {
+                        $charCount.attr({
+                            'aria-live': 'polite',
+                            'aria-atomic': true
+                        });
+                    }
+                    $charCount.text(curCharCount);
+
                 }
             },
 
@@ -626,8 +646,7 @@
             fieldValue: function() {
                 if (this.mode === 'edit') {
                     return this.$('.u-field-value textarea').val();
-                }
-                else {
+                } else {
                     return this.$('.u-field-value .u-field-value-readonly').text();
                 }
             },

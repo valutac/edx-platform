@@ -9,7 +9,6 @@ from uuid import uuid4
 
 import ddt
 import pytest
-from dateutil.tz import tzutc
 from django.conf import settings
 from lazy.lazy import lazy
 from mock import patch
@@ -186,6 +185,7 @@ class MixedWithOptionsTestCase(MixedSplitTestCase):
 @ddt.ddt
 class TestCoursewareSearchIndexer(MixedWithOptionsTestCase):
     """ Tests the operation of the CoursewareSearchIndexer """
+    shard = 1
 
     WORKS_WITH_STORES = (ModuleStoreEnum.Type.mongo, ModuleStoreEnum.Type.split)
 
@@ -606,6 +606,7 @@ class TestCoursewareSearchIndexer(MixedWithOptionsTestCase):
 @ddt.ddt
 class TestLargeCourseDeletions(MixedWithOptionsTestCase):
     """ Tests to excerise deleting items from a course """
+    shard = 1
 
     WORKS_WITH_STORES = (ModuleStoreEnum.Type.mongo, ModuleStoreEnum.Type.split)
 
@@ -689,6 +690,7 @@ class TestTaskExecution(SharedModuleStoreTestCase):
     being present, which allows us to ensure that when the listener is
     executed, it is done as expected.
     """
+    shard = 1
 
     @classmethod
     def setUpClass(cls):
@@ -783,6 +785,7 @@ class TestTaskExecution(SharedModuleStoreTestCase):
 @ddt.ddt
 class TestLibrarySearchIndexer(MixedWithOptionsTestCase):
     """ Tests the operation of the CoursewareSearchIndexer """
+    shard = 1
 
     # libraries work only with split, so do library indexer
     WORKS_WITH_STORES = (ModuleStoreEnum.Type.split, )
@@ -956,6 +959,8 @@ class GroupConfigurationSearchMongo(CourseTestCase, MixedWithOptionsTestCase):
     """
     Tests indexing of content groups on course modules using mongo modulestore.
     """
+    shard = 1
+
     MODULESTORE = TEST_DATA_MONGO_MODULESTORE
     INDEX_NAME = CoursewareSearchIndexer.INDEX_NAME
 
@@ -1187,7 +1192,7 @@ class GroupConfigurationSearchMongo(CourseTestCase, MixedWithOptionsTestCase):
             'content_type': 'Text',
             'org': self.course.org,
             'content_groups': content_groups,
-            'start_date': datetime(2015, 4, 1, 0, 0, tzinfo=tzutc())
+            'start_date': datetime(2015, 4, 1, 0, 0, tzinfo=UTC)
         }
 
     def _html_experiment_group_result(self, html_unit, content_groups):
@@ -1207,7 +1212,7 @@ class GroupConfigurationSearchMongo(CourseTestCase, MixedWithOptionsTestCase):
             'content_type': 'Text',
             'org': self.course.org,
             'content_groups': content_groups,
-            'start_date': datetime(2015, 4, 1, 0, 0, tzinfo=tzutc())
+            'start_date': datetime(2015, 4, 1, 0, 0, tzinfo=UTC)
         }
 
     def _vertical_experiment_group_result(self, vertical, content_groups):
@@ -1215,7 +1220,7 @@ class GroupConfigurationSearchMongo(CourseTestCase, MixedWithOptionsTestCase):
         Return object with arguments and content group for split_test vertical.
         """
         return {
-            'start_date': datetime(2015, 4, 1, 0, 0, tzinfo=tzutc()),
+            'start_date': datetime(2015, 4, 1, 0, 0, tzinfo=UTC),
             'content': {'display_name': vertical.display_name},
             'course': unicode(self.course.id),
             'location': [
@@ -1247,7 +1252,7 @@ class GroupConfigurationSearchMongo(CourseTestCase, MixedWithOptionsTestCase):
             'content_type': 'Text',
             'org': self.course.org,
             'content_groups': None,
-            'start_date': datetime(2015, 4, 1, 0, 0, tzinfo=tzutc())
+            'start_date': datetime(2015, 4, 1, 0, 0, tzinfo=UTC)
         }
 
     def _get_index_values_from_call_args(self, mock_index):

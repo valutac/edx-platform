@@ -12,12 +12,12 @@ from celery.result import AsyncResult
 from celery.states import FAILURE, READY_STATES, REVOKED, SUCCESS
 from django.utils.translation import ugettext as _
 from opaque_keys.edx.keys import UsageKey
+from six import text_type
 
 from courseware.courses import get_problems_in_section
 from courseware.module_render import get_xqueue_callback_url_prefix
 from lms.djangoapps.instructor_task.models import PROGRESS, InstructorTask
 from util.db import outer_atomic
-from xblock.scorable import ScorableXBlockMixin
 from xmodule.modulestore.django import modulestore
 
 log = logging.getLogger(__name__)
@@ -256,8 +256,8 @@ def _handle_instructor_task_failure(instructor_task, error):
     """
     Do required operations if task creation was not complete.
     """
-    log.info("instructor task (%s) failed, result: %s", instructor_task.task_id, error.message)
-    _update_instructor_task_state(instructor_task, FAILURE, error.message)
+    log.info("instructor task (%s) failed, result: %s", instructor_task.task_id, text_type(error))
+    _update_instructor_task_state(instructor_task, FAILURE, text_type(error))
 
     raise QueueConnectionError()
 
@@ -370,7 +370,7 @@ def check_entrance_exam_problems_for_rescoring(exam_key):  # pylint: disable=inv
         raise NotImplementedError(msg)
 
 
-def encode_problem_and_student_input(usage_key, student=None):  # pylint: disable=invalid-name
+def encode_problem_and_student_input(usage_key, student=None):
     """
     Encode optional usage_key and optional student into task_key and task_input values.
 
@@ -381,11 +381,11 @@ def encode_problem_and_student_input(usage_key, student=None):  # pylint: disabl
 
     assert isinstance(usage_key, UsageKey)
     if student is not None:
-        task_input = {'problem_url': usage_key.to_deprecated_string(), 'student': student.username}
-        task_key_stub = "{student}_{problem}".format(student=student.id, problem=usage_key.to_deprecated_string())
+        task_input = {'problem_url': text_type(usage_key), 'student': student.username}
+        task_key_stub = "{student}_{problem}".format(student=student.id, problem=text_type(usage_key))
     else:
-        task_input = {'problem_url': usage_key.to_deprecated_string()}
-        task_key_stub = "_{problem}".format(problem=usage_key.to_deprecated_string())
+        task_input = {'problem_url': text_type(usage_key)}
+        task_key_stub = "_{problem}".format(problem=text_type(usage_key))
 
     # create the key value by using MD5 hash:
     task_key = hashlib.md5(task_key_stub).hexdigest()
@@ -393,7 +393,7 @@ def encode_problem_and_student_input(usage_key, student=None):  # pylint: disabl
     return task_input, task_key
 
 
-def encode_entrance_exam_and_student_input(usage_key, student=None):  # pylint: disable=invalid-name
+def encode_entrance_exam_and_student_input(usage_key, student=None):
     """
     Encode usage_key and optional student into task_key and task_input values.
 
@@ -403,11 +403,11 @@ def encode_entrance_exam_and_student_input(usage_key, student=None):  # pylint: 
     """
     assert isinstance(usage_key, UsageKey)
     if student is not None:
-        task_input = {'entrance_exam_url': unicode(usage_key), 'student': student.username}
-        task_key_stub = "{student}_{entranceexam}".format(student=student.id, entranceexam=unicode(usage_key))
+        task_input = {'entrance_exam_url': text_type(usage_key), 'student': student.username}
+        task_key_stub = "{student}_{entranceexam}".format(student=student.id, entranceexam=text_type(usage_key))
     else:
-        task_input = {'entrance_exam_url': unicode(usage_key)}
-        task_key_stub = "_{entranceexam}".format(entranceexam=unicode(usage_key))
+        task_input = {'entrance_exam_url': text_type(usage_key)}
+        task_key_stub = "_{entranceexam}".format(entranceexam=text_type(usage_key))
 
     # create the key value by using MD5 hash:
     task_key = hashlib.md5(task_key_stub).hexdigest()

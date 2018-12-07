@@ -4,16 +4,15 @@ Tests for course_modes views.
 
 import decimal
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import ddt
 import freezegun
 import httpretty
-import waffle
+import pytz
 from django.conf import settings
-from django.core.urlresolvers import reverse
+from django.urls import reverse
 from mock import patch
-from nose.plugins.attrib import attr
 
 from course_modes.models import CourseMode, Mode
 from course_modes.tests.factories import CourseModeFactory
@@ -23,7 +22,6 @@ from openedx.core.djangoapps.embargo.test_utils import restrict_course
 from openedx.core.djangoapps.theming.tests.test_util import with_comprehensive_theme
 from student.models import CourseEnrollment
 from student.tests.factories import CourseEnrollmentFactory, UserFactory
-from util import organizations_helpers as organizations_api
 from util.testing import UrlResetMixin
 from util.tests.mixins.discovery import CourseCatalogServiceMockMixin
 from xmodule.modulestore.django import modulestore
@@ -31,56 +29,73 @@ from xmodule.modulestore.tests.django_utils import ModuleStoreTestCase
 from xmodule.modulestore.tests.factories import CourseFactory
 
 
-@attr(shard=3)
 @ddt.ddt
 @unittest.skipUnless(settings.ROOT_URLCONF == 'lms.urls', 'Test only valid in lms')
 class CourseModeViewTest(CatalogIntegrationMixin, UrlResetMixin, ModuleStoreTestCase, CourseCatalogServiceMockMixin):
     """
     Course Mode View tests
     """
+    shard = 5
     URLCONF_MODULES = ['course_modes.urls']
 
     @patch.dict(settings.FEATURES, {'MODE_CREATION_FOR_TESTING': True})
     def setUp(self):
         super(CourseModeViewTest, self).setUp()
-        self.course = CourseFactory.create()
+        now = datetime.now(pytz.utc)
+        day = timedelta(days=1)
+        tomorrow = now + day
+        yesterday = now - day
+        # Create course that has not started yet and course that started
+        self.course = CourseFactory.create(start=tomorrow)
+        self.course_that_started = CourseFactory.create(start=yesterday)
         self.user = UserFactory.create(username="Bob", email="bob@example.com", password="edx")
         self.client.login(username=self.user.username, password="edx")
 
     @unittest.skipUnless(settings.ROOT_URLCONF == 'lms.urls', 'Test only valid in lms')
     @httpretty.activate
     @ddt.data(
-        # is_active?, enrollment_mode, redirect?
-        (True, 'verified', True),
-        (True, 'honor', False),
-        (True, 'audit', False),
-        (False, 'verified', False),
-        (False, 'honor', False),
-        (False, 'audit', False),
-        (False, None, False),
+        # is_active?, enrollment_mode, redirect?, has_started
+        (True, 'verified', True, False),
+        (True, 'honor', False, False),
+        (True, 'audit', False, False),
+        (True, 'verified', True, True),
+        (True, 'honor', False, True),
+        (True, 'audit', False, True),
+        (False, 'verified', False, False),
+        (False, 'honor', False, False),
+        (False, 'audit', False, False),
+        (False, None, False, False),
     )
     @ddt.unpack
-    def test_redirect_to_dashboard(self, is_active, enrollment_mode, redirect):
+    def test_redirect_to_dashboard(self, is_active, enrollment_mode, redirect, has_started):
+        # Configure whether course has started
+        # If it has go to course home instead of dashboard
+        course = self.course_that_started if has_started else self.course
         # Create the course modes
         for mode in ('audit', 'honor', 'verified'):
-            CourseModeFactory.create(mode_slug=mode, course_id=self.course.id)
+            CourseModeFactory.create(mode_slug=mode, course_id=course.id)
 
         # Enroll the user in the test course
         if enrollment_mode is not None:
             CourseEnrollmentFactory(
                 is_active=is_active,
                 mode=enrollment_mode,
-                course_id=self.course.id,
+                course_id=course.id,
                 user=self.user
             )
 
         # Configure whether we're upgrading or not
-        url = reverse('course_modes_choose', args=[unicode(self.course.id)])
+        url = reverse('course_modes_choose', args=[unicode(course.id)])
         response = self.client.get(url)
 
         # Check whether we were correctly redirected
         if redirect:
-            self.assertRedirects(response, reverse('dashboard'))
+            if has_started:
+                self.assertRedirects(
+                    response, reverse('openedx.course_experience.course_home', kwargs={'course_id': course.id})
+                )
+            else:
+                self.assertRedirects(response, reverse('dashboard'))
         else:
             self.assertEquals(response.status_code, 200)
 
@@ -120,7 +135,7 @@ class CourseModeViewTest(CatalogIntegrationMixin, UrlResetMixin, ModuleStoreTest
         # Configure whether we're upgrading or not
         url = reverse('course_modes_choose', args=[unicode(prof_course.id)])
         response = self.client.get(url)
-        self.assertRedirects(response, 'http://testserver/basket/add/?sku=TEST', fetch_redirect_response=False)
+        self.assertRedirects(response, 'http://testserver/test_basket/add/?sku=TEST', fetch_redirect_response=False)
         ecomm_test_utils.update_commerce_config(enabled=False)
 
     @httpretty.activate
@@ -468,6 +483,5 @@ class TrackSelectionEmbargoTest(UrlResetMixin, ModuleStoreTestCase):
 
     @httpretty.activate
     def test_embargo_allow(self):
-
         response = self.client.get(self.url)
         self.assertEqual(response.status_code, 200)

@@ -44,11 +44,11 @@ def event(request):
     return HttpResponse(status=204)
 
 
-def render_from_lms(template_name, dictionary, context=None, namespace='main'):
+def render_from_lms(template_name, dictionary, namespace='main'):
     """
-    Render a template using the LMS MAKO_TEMPLATES
+    Render a template using the LMS Mako templates
     """
-    return render_to_string(template_name, dictionary, context, namespace="lms." + namespace)
+    return render_to_string(template_name, dictionary, namespace="lms." + namespace)
 
 
 def get_parent_xblock(xblock):
@@ -145,7 +145,7 @@ def xblock_type_display_name(xblock, default_display_name=None):
         return _('Unit')
     component_class = XBlock.load_class(category, select=settings.XBLOCK_SELECT_FUNCTION)
     if hasattr(component_class, 'display_name') and component_class.display_name.default:
-        return _(component_class.display_name.default)    # pylint: disable=translation-of-non-string
+        return _(component_class.display_name.default)
     else:
         return default_display_name
 
@@ -282,7 +282,7 @@ def create_xblock(parent_locator, user, category, display_name, boilerplate=None
             course.tabs.append(
                 StaticTab(
                     name=display_name,
-                    url_slug=dest_usage_key.name,
+                    url_slug=dest_usage_key.block_id,
                 )
             )
             store.update_item(course, user.id)
@@ -298,7 +298,7 @@ def is_item_in_course_tree(item):
     if its parent has been deleted and is now an orphan.
     """
     ancestor = item.get_parent()
-    while ancestor is not None and ancestor.location.category != "course":
+    while ancestor is not None and ancestor.location.block_type != "course":
         ancestor = ancestor.get_parent()
 
     return ancestor is not None

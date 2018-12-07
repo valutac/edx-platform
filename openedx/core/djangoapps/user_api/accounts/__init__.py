@@ -2,7 +2,8 @@
 Account constants
 """
 
-from django.utils.translation import ugettext as _
+from django.utils.text import format_lazy
+from django.utils.translation import ugettext_lazy as _
 
 
 # The minimum and maximum length for the name ("full name") account field
@@ -16,10 +17,6 @@ USERNAME_MAX_LENGTH = 30
 # The minimum and maximum length for the email account field
 EMAIL_MIN_LENGTH = 3
 EMAIL_MAX_LENGTH = 254  # Limit per RFCs is 254
-
-# The minimum and maximum length for the password account field
-PASSWORD_MIN_LENGTH = 2
-PASSWORD_MAX_LENGTH = 75
 
 ACCOUNT_VISIBILITY_PREF_KEY = 'account_privacy'
 
@@ -60,24 +57,20 @@ USERNAME_CONFLICT_MSG = _(
 
 # Translators: This message is shown to users who enter a username/email/password
 # with an inappropriate length (too short or too long).
-USERNAME_BAD_LENGTH_MSG = _(u"Username must be between {min} and {max} characters long.").format(
-    min=USERNAME_MIN_LENGTH, max=USERNAME_MAX_LENGTH
+USERNAME_BAD_LENGTH_MSG = format_lazy(
+    _(u"Username must be between {min} and {max} characters long."),
+    min=USERNAME_MIN_LENGTH,
+    max=USERNAME_MAX_LENGTH,
 )
-EMAIL_BAD_LENGTH_MSG = _(u"Enter a valid email address that contains at least {min} characters.").format(
-    min=EMAIL_MIN_LENGTH
+EMAIL_BAD_LENGTH_MSG = format_lazy(
+    _(u"Enter a valid email address that contains at least {min} characters."),
+    min=EMAIL_MIN_LENGTH,
 )
-PASSWORD_EMPTY_MSG = _(u"Enter a password.")
-PASSWORD_BAD_MIN_LENGTH_MSG = _(u"Password is not long enough.")
-PASSWORD_BAD_MAX_LENGTH_MSG = _(u"Password cannot be longer than {max} character.").format(max=PASSWORD_MAX_LENGTH)
 
 # These strings are normally not user-facing.
 USERNAME_BAD_TYPE_MSG = u"Username must be a string."
 EMAIL_BAD_TYPE_MSG = u"Email must be a string."
 PASSWORD_BAD_TYPE_MSG = u"Password must be a string."
-
-# Translators: This message is shown to users who enter a password matching
-# the username they enter(ed).
-PASSWORD_CANT_EQUAL_USERNAME_MSG = _(u"Password cannot be the same as the username.")
 
 # Translators: These messages are shown to users who do not enter information
 # into the required field or enter it incorrectly.

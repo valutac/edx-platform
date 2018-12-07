@@ -17,6 +17,7 @@ omit =
     cms/djangoapps/contentstore/views/dev.py
     cms/djangoapps/*/migrations/*
     cms/djangoapps/*/features/*
+    cms/lib/*/migrations/*
     lms/debug/*
     lms/envs/*
     lms/djangoapps/*/migrations/*
@@ -25,8 +26,10 @@ omit =
     common/djangoapps/*/migrations/*
     openedx/core/djangoapps/*/migrations/*
     openedx/core/djangoapps/debug/*
+    openedx/features/*/migrations/*
 
 concurrency=multiprocessing
+parallel = true
 
 [report]
 ignore_errors = True

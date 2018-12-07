@@ -1,13 +1,14 @@
 """
 Class used for defining and running Bok Choy acceptance test suite
 """
+import os
 from time import sleep
 from textwrap import dedent
 
 from common.test.acceptance.fixtures.course import CourseFixture, FixtureError
 
 from path import Path as path
-from paver.easy import sh, BuildFailure, cmdopts, task, needs, might_call, call_task, dry
+from paver.easy import sh, cmdopts, task, needs, might_call, call_task, dry
 from pavelib.utils.test.suites.suite import TestSuite
 from pavelib.utils.envs import Env
 from pavelib.utils.test.bokchoy_utils import (
@@ -21,8 +22,7 @@ from pavelib.utils.test.bokchoy_options import (
 )
 from pavelib.utils.test import utils as test_utils
 from pavelib.utils.timer import timed
-
-import os
+from pavelib.database import update_local_bokchoy_db_from_s3
 
 try:
     from pygments.console import colorize
@@ -88,6 +88,24 @@ def load_courses(options):
 
 
 @task
+@timed
+def update_fixtures():
+    """
+    Use the correct domain for the current test environment in each Site
+    fixture.  This currently differs between devstack cms, devstack lms,
+    and Jenkins.
+    """
+    msg = colorize('green', "Updating the Site fixture domains...")
+    print msg
+
+    sh(
+        " ./manage.py lms --settings={settings} update_fixtures".format(
+            settings=Env.SETTINGS
+        )
+    )
+
+
+@task
 @cmdopts([BOKCHOY_IMPORTS_DIR, BOKCHOY_IMPORTS_DIR_DEPR, PA11Y_FETCH_COURSE])
 @timed
 def get_test_course(options):
@@ -135,12 +153,14 @@ def get_test_course(options):
 def reset_test_database():
     """
     Reset the database used by the bokchoy tests.
+
+    Use the database cache automation defined in pavelib/database.py
     """
-    sh("{}/scripts/reset-test-db.sh".format(Env.REPO_ROOT))
+    update_local_bokchoy_db_from_s3()  # pylint: disable=no-value-for-parameter
 
 
 @task
-@needs(['reset_test_database', 'clear_mongo', 'load_bok_choy_data', 'load_courses'])
+@needs(['reset_test_database', 'clear_mongo', 'load_bok_choy_data', 'load_courses', 'update_fixtures'])
 @might_call('start_servers')
 @cmdopts([BOKCHOY_FASTTEST], share_with=['start_servers'])
 @timed
@@ -205,7 +225,7 @@ class BokChoyTestSuite(TestSuite):
         self.har_dir = self.log_dir / 'hars'
         self.a11y_file = Env.BOK_CHOY_A11Y_CUSTOM_RULES_FILE
         self.imports_dir = kwargs.get('imports_dir', None)
-        self.coveragerc = kwargs.get('coveragerc', Env.BOK_CHOY_COVERAGERC)
+        self.coveragerc = kwargs.get('coveragerc', None)
         self.save_screenshots = kwargs.get('save_screenshots', False)
 
     def __enter__(self):
@@ -230,10 +250,11 @@ class BokChoyTestSuite(TestSuite):
         check_services()
 
         if not self.testsonly:
-            call_task('prepare_bokchoy_run', options={'log_dir': self.log_dir})  # pylint: disable=no-value-for-parameter
+            call_task('prepare_bokchoy_run', options={'log_dir': self.log_dir})
         else:
             # load data in db_fixtures
             load_bok_choy_data()  # pylint: disable=no-value-for-parameter
+            update_fixtures()
 
         msg = colorize('green', "Confirming servers have started...")
         print msg
@@ -333,17 +354,21 @@ class BokChoyTestSuite(TestSuite):
         ]
         if self.save_screenshots:
             cmd.append("NEEDLE_SAVE_BASELINE=True")
-        cmd += [
-            "coverage",
-            "run",
-        ]
         if self.coveragerc:
+            cmd += [
+                "coverage",
+                "run",
+            ]
             cmd.append("--rcfile={}".format(self.coveragerc))
+        else:
+            cmd += [
+                "python",
+                "-Wd",
+            ]
         cmd += [
             "-m",
             "pytest",
             test_spec,
-            "--durations=20",
         ] + self.verbosity_processes_command
         if self.extra_args:
             cmd.append(self.extra_args)

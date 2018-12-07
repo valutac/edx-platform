@@ -5,7 +5,6 @@ import json
 import httpretty
 import mock
 from django.core.cache import cache
-from nose.plugins.attrib import attr
 
 from openedx.core.djangoapps.catalog.models import CatalogIntegration
 from openedx.core.djangoapps.catalog.tests.mixins import CatalogIntegrationMixin
@@ -20,17 +19,18 @@ TEST_API_URL = 'http://www-internal.example.com/api'
 
 
 @skip_unless_lms
-@attr(shard=2)
 @httpretty.activate
 class TestGetEdxApiData(CatalogIntegrationMixin, CredentialsApiConfigMixin, CacheIsolationTestCase):
     """Tests for edX API data retrieval utility."""
     ENABLED_CACHES = ['default']
+    shard = 2
 
     def setUp(self):
         super(TestGetEdxApiData, self).setUp()
 
         self.user = UserFactory()
 
+        httpretty.httpretty.reset()
         cache.clear()
 
     def _mock_catalog_api(self, responses, url=None):
@@ -59,7 +59,7 @@ class TestGetEdxApiData(CatalogIntegrationMixin, CredentialsApiConfigMixin, Cach
             [httpretty.Response(body=json.dumps(data), content_type='application/json')]
         )
 
-        with mock.patch('openedx.core.lib.edx_api_utils.EdxRestApiClient.__init__') as mock_init:
+        with mock.patch('edx_rest_api_client.client.EdxRestApiClient.__init__') as mock_init:
             actual_collection = get_edx_api_data(catalog_integration, 'programs', api=api)
 
             # Verify that the helper function didn't initialize its own client.

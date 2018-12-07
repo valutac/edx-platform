@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 Unit tests for masquerade.
 """
@@ -5,30 +6,27 @@ import json
 import pickle
 from datetime import datetime
 
+import ddt
 from django.conf import settings
-from django.core.urlresolvers import reverse
+from django.urls import reverse
 from django.test import TestCase
-from django.utils.timezone import UTC
 from mock import patch
-from nose.plugins.attrib import attr
-from xblock.runtime import DictKeyValueStore
+from pytz import UTC
 
 from capa.tests.response_xml_factory import OptionResponseXMLFactory
-from courseware.masquerade import (
-    CourseMasquerade,
-    MasqueradingKeyValueStore,
-    get_masquerading_user_group,
-)
+from courseware.masquerade import CourseMasquerade, MasqueradingKeyValueStore, get_masquerading_user_group
 from courseware.tests.factories import StaffFactory
 from courseware.tests.helpers import LoginEnrollmentTestCase, masquerade_as_group_member
 from courseware.tests.test_submitting_problems import ProblemSubmissionTestMixin
 from openedx.core.djangoapps.lang_pref import LANGUAGE_KEY
 from openedx.core.djangoapps.self_paced.models import SelfPacedConfiguration
-from openedx.core.djangoapps.user_api.preferences.api import (
-    get_user_preference,
-    set_user_preference
-)
+from openedx.core.djangoapps.user_api.preferences.api import get_user_preference, set_user_preference
+from openedx.core.djangoapps.waffle_utils.testutils import override_waffle_flag
+from openedx.core.lib.tests import attr
+from openedx.features.course_experience import UNIFIED_COURSE_TAB_FLAG
+from student.models import CourseEnrollment
 from student.tests.factories import UserFactory
+from xblock.runtime import DictKeyValueStore
 from xmodule.modulestore.django import modulestore
 from xmodule.modulestore.tests.django_utils import SharedModuleStoreTestCase
 from xmodule.modulestore.tests.factories import CourseFactory, ItemFactory
@@ -42,7 +40,7 @@ class MasqueradeTestCase(SharedModuleStoreTestCase, LoginEnrollmentTestCase):
     @classmethod
     def setUpClass(cls):
         super(MasqueradeTestCase, cls).setUpClass()
-        cls.course = CourseFactory.create(number='masquerade-test', metadata={'start': datetime.now(UTC())})
+        cls.course = CourseFactory.create(number='masquerade-test', metadata={'start': datetime.now(UTC)})
         cls.info_page = ItemFactory.create(
             category="course_info", parent_location=cls.course.location,
             data="OOGIE BLOOGIE", display_name="updates"
@@ -93,8 +91,8 @@ class MasqueradeTestCase(SharedModuleStoreTestCase, LoginEnrollmentTestCase):
             'courseware_section',
             kwargs={
                 'course_id': unicode(self.course.id),
-                'chapter': self.chapter.location.name,
-                'section': self.sequential.location.name,
+                'chapter': self.chapter.location.block_id,
+                'section': self.sequential.location.block_id,
             }
         )
         return self.client.get(url)
@@ -153,20 +151,6 @@ class MasqueradeTestCase(SharedModuleStoreTestCase, LoginEnrollmentTestCase):
         problem_html = json.loads(self.get_problem().content)['html']
         self.assertIn(self.problem_display_name, problem_html)
         self.assertEqual(show_answer_expected, "Show Answer" in problem_html)
-
-    def verify_real_user_profile_link(self):
-        """
-        Verifies that the 'Profile' link in the navigation dropdown is pointing
-        to the real user.
-        """
-        content = self.get_courseware_page().content
-        self.assertIn(
-            '<a href="/u/{}" role="menuitem" class="action dropdown-menuitem">Profile</a>'.format(
-                self.test_user.username
-            ),
-            content,
-            "Profile link should point to real user",
-        )
 
     def ensure_masquerade_as_group_member(self, partition_id, group_id):
         """
@@ -275,6 +259,7 @@ class TestStaffMasqueradeAsStudent(StaffMasqueradeTestCase):
         self.verify_show_answer_present(True)
 
 
+@ddt.ddt
 @attr(shard=1)
 class TestStaffMasqueradeAsSpecificStudent(StaffMasqueradeTestCase, ProblemSubmissionTestMixin):
     """
@@ -331,6 +316,7 @@ class TestStaffMasqueradeAsSpecificStudent(StaffMasqueradeTestCase, ProblemSubmi
             self.client.cookies[settings.LANGUAGE_COOKIE].value, expected_language_code
         )
 
+    @override_waffle_flag(UNIFIED_COURSE_TAB_FLAG, active=False)
     @patch.dict('django.conf.settings.FEATURES', {'DISABLE_START_DATES': False})
     def test_masquerade_as_specific_user_on_self_paced(self):
         """
@@ -355,16 +341,23 @@ class TestStaffMasqueradeAsSpecificStudent(StaffMasqueradeTestCase, ProblemSubmi
         content = response.content
         self.assertIn("OOGIE BLOOGIE", content)
 
+    @ddt.data(
+        'john',  # Non-unicode username
+        u'fôô@bar',  # Unicode username with @, which is what the ENABLE_UNICODE_USERNAME feature allows
+    )
     @patch.dict('django.conf.settings.FEATURES', {'DISABLE_START_DATES': False})
-    def test_masquerade_as_specific_student(self):
+    def test_masquerade_as_specific_student(self, username):
         """
         Test masquerading as a specific user.
 
         We answer the problem in our test course as the student and as staff user, and we use the
         progress as a proxy to determine who's state we currently see.
         """
+        student = UserFactory.create(username=username)
+        CourseEnrollment.enroll(student, self.course.id)
+        self.logout()
+        self.login(student.email, 'test')
         # Answer correctly as the student, and check progress.
-        self.login_student()
         self.submit_answer('Correct', 'Correct')
         self.assertEqual(self.get_progress_detail(), u'2/2')
 
@@ -373,11 +366,8 @@ class TestStaffMasqueradeAsSpecificStudent(StaffMasqueradeTestCase, ProblemSubmi
         self.assertEqual(self.get_progress_detail(), u'0/2')
 
         # Masquerade as the student, and check we can see the student state.
-        self.update_masquerade(role='student', user_name=self.student_user.username)
+        self.update_masquerade(role='student', user_name=student.username)
         self.assertEqual(self.get_progress_detail(), u'2/2')
-
-        # Verify that the user dropdown links have not changed
-        self.verify_real_user_profile_link()
 
         # Temporarily override the student state.
         self.submit_answer('Correct', 'Incorrect')
@@ -392,7 +382,8 @@ class TestStaffMasqueradeAsSpecificStudent(StaffMasqueradeTestCase, ProblemSubmi
         self.assertEqual(self.get_progress_detail(), u'0/2')
 
         # Verify the student state did not change.
-        self.login_student()
+        self.logout()
+        self.login(student.email, 'test')
         self.assertEqual(self.get_progress_detail(), u'2/2')
 
     def test_masquerading_with_language_preference(self):
@@ -420,6 +411,7 @@ class TestStaffMasqueradeAsSpecificStudent(StaffMasqueradeTestCase, ProblemSubmi
         self.get_courseware_page()
         self.assertExpectedLanguageInPreference(self.test_user, english_language_code)
 
+    @override_waffle_flag(UNIFIED_COURSE_TAB_FLAG, active=False)
     @patch.dict('django.conf.settings.FEATURES', {'DISABLE_START_DATES': False})
     def test_masquerade_as_specific_student_course_info(self):
         """
@@ -461,7 +453,6 @@ class TestStaffMasqueradeAsSpecificStudent(StaffMasqueradeTestCase, ProblemSubmi
         masquerade_progress = self.get_progress_page().content
         self.assertNotIn("1 of 2 possible points", masquerade_progress)
         self.assertIn("2 of 2 possible points", masquerade_progress)
-        self.verify_real_user_profile_link()
 
 
 @attr(shard=1)

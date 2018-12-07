@@ -6,9 +6,9 @@ import json
 
 from django.core import mail
 from django.core.management import call_command
-from django.core.urlresolvers import reverse
+from django.urls import reverse
 from mock import Mock, patch
-from nose.plugins.attrib import attr
+from six import text_type
 
 from bulk_email.models import BulkEmailFlag
 from bulk_email.policies import CourseEmailOptout
@@ -22,12 +22,12 @@ from xmodule.modulestore.tests.django_utils import ModuleStoreTestCase
 from xmodule.modulestore.tests.factories import CourseFactory
 
 
-@attr(shard=1)
 @patch('bulk_email.models.html_to_text', Mock(return_value='Mocking CourseEmail.text_message', autospec=True))
 class TestOptoutCourseEmails(ModuleStoreTestCase):
     """
     Test that optouts are referenced in sending course email.
     """
+    shard = 1
 
     def setUp(self):
         super(TestOptoutCourseEmails, self).setUp()
@@ -42,9 +42,9 @@ class TestOptoutCourseEmails(ModuleStoreTestCase):
 
         self.client.login(username=self.student.username, password="test")
 
-        self.send_mail_url = reverse('send_email', kwargs={'course_id': self.course.id.to_deprecated_string()})
+        self.send_mail_url = reverse('send_email', kwargs={'course_id': text_type(self.course.id)})
         self.success_content = {
-            'course_id': self.course.id.to_deprecated_string(),
+            'course_id': text_type(self.course.id),
             'success': True,
         }
         BulkEmailFlag.objects.create(enabled=True, require_course_email_auth=False)
@@ -52,7 +52,7 @@ class TestOptoutCourseEmails(ModuleStoreTestCase):
     def navigate_to_email_view(self):
         """Navigate to the instructor dash's email view"""
         # Pull up email view on instructor dashboard
-        url = reverse('instructor_dashboard', kwargs={'course_id': self.course.id.to_deprecated_string()})
+        url = reverse('instructor_dashboard', kwargs={'course_id': text_type(self.course.id)})
         response = self.client.get(url)
         email_section = '<div class="vert-left send-email" id="section-send-email">'
         # If this fails, it is likely because BulkEmailFlag.is_enabled() is set to False
@@ -65,7 +65,7 @@ class TestOptoutCourseEmails(ModuleStoreTestCase):
         url = reverse('change_email_settings')
         # This is a checkbox, so on the post of opting out (that is, an Un-check of the box),
         # the Post that is sent will not contain 'receive_emails'
-        response = self.client.post(url, {'course_id': self.course.id.to_deprecated_string()})
+        response = self.client.post(url, {'course_id': text_type(self.course.id)})
         self.assertEquals(json.loads(response.content), {'success': True})
 
         self.client.logout()
@@ -91,7 +91,7 @@ class TestOptoutCourseEmails(ModuleStoreTestCase):
         Make sure student receives course email after opting in.
         """
         url = reverse('change_email_settings')
-        response = self.client.post(url, {'course_id': self.course.id.to_deprecated_string(), 'receive_emails': 'on'})
+        response = self.client.post(url, {'course_id': text_type(self.course.id), 'receive_emails': 'on'})
         self.assertEquals(json.loads(response.content), {'success': True})
 
         self.client.logout()
@@ -117,12 +117,13 @@ class TestOptoutCourseEmails(ModuleStoreTestCase):
         self.assertIn(self.instructor.email, sent_addresses)
 
 
-@attr(shard=1)
 @patch('bulk_email.models.html_to_text', Mock(return_value='Mocking CourseEmail.text_message', autospec=True))
 class TestACEOptoutCourseEmails(ModuleStoreTestCase):
     """
     Test that optouts are referenced in sending course email.
     """
+    shard = 1
+
     def setUp(self):
         super(TestACEOptoutCourseEmails, self).setUp()
         course_title = u"ẗëṡẗ title ｲ乇丂ｲ ﾶ乇丂丂ﾑg乇 ｷo尺 ﾑﾚﾚ тэѕт мэѕѕаБэ"
@@ -140,7 +141,7 @@ class TestACEOptoutCourseEmails(ModuleStoreTestCase):
         url = reverse('change_email_settings')
         # This is a checkbox, so on the post of opting out (that is, an Un-check of the box),
         # the Post that is sent will not contain 'receive_emails'
-        post_data = {'course_id': self.course.id.to_deprecated_string()}
+        post_data = {'course_id': text_type(self.course.id)}
 
         if not opted_out:
             post_data['receive_emails'] = 'on'

@@ -1,7 +1,6 @@
 """
 Tests for the score change signals defined in the courseware models module.
 """
-
 import re
 from datetime import datetime
 
@@ -18,7 +17,7 @@ from ..signals.handlers import (
     disconnect_submissions_signal_receiver,
     problem_raw_score_changed_handler,
     submissions_score_reset_handler,
-    submissions_score_set_handler
+    submissions_score_set_handler,
 )
 from ..signals.signals import PROBLEM_RAW_SCORE_CHANGED
 
@@ -64,6 +63,7 @@ PROBLEM_RAW_SCORE_CHANGED_KWARGS = {
     'score_deleted': True,
     'modified': FROZEN_NOW_TIMESTAMP,
     'score_db_table': ScoreDatabaseTableEnum.courseware_student_module,
+    'grader_response': None
 }
 
 PROBLEM_WEIGHTED_SCORE_CHANGED_KWARGS = {
@@ -77,6 +77,7 @@ PROBLEM_WEIGHTED_SCORE_CHANGED_KWARGS = {
     'score_deleted': True,
     'modified': FROZEN_NOW_TIMESTAMP,
     'score_db_table': ScoreDatabaseTableEnum.courseware_student_module,
+    'grader_response': None
 }
 
 
@@ -91,6 +92,7 @@ class ScoreChangedSignalRelayTest(TestCase):
     This ensures that listeners in the LMS only have to handle one type
     of signal for all scoring events regardless of their origin.
     """
+    shard = 4
     SIGNALS = {
         'score_set': score_set,
         'score_reset': score_reset,

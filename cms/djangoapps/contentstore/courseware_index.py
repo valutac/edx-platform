@@ -7,7 +7,7 @@ from abc import ABCMeta, abstractmethod
 from datetime import timedelta
 
 from django.conf import settings
-from django.core.urlresolvers import resolve
+from django.urls import resolve
 from django.utils.translation import ugettext as _
 from django.utils.translation import ugettext_lazy
 from search.search_engine_base import SearchEngine
@@ -597,7 +597,7 @@ class CourseAboutSearchIndexer(object):
 
         # load data for all of the 'about' modules for this course into a dictionary
         about_dictionary = {
-            item.location.name: item.data
+            item.location.block_id: item.data
             for item in modulestore.get_items(course.id, qualifiers={"category": "about"})
         }
 
@@ -631,7 +631,7 @@ class CourseAboutSearchIndexer(object):
         # Broad exception handler to protect around and report problems with indexing
         try:
             searcher.index(cls.DISCOVERY_DOCUMENT_TYPE, [course_info])
-        except:  # pylint: disable=bare-except
+        except:
             log.exception(
                 "Course discovery indexing error encountered, course discovery index may be out of date %s",
                 course_id,

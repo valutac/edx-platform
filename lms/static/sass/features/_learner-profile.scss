@@ -48,7 +48,7 @@
   }
 
   .card-content {
-    color: $base-font-color;
+    color: $body-color;
     margin-top: $baseline/2;
   }
 
@@ -109,7 +109,20 @@
 
   .window-wrap,
   .content-wrapper {
-    background-color: $white;
+    background-color: $body-bg;
+    padding: 0;
+    margin-top: 0;
+  }
+
+  .page-banner {
+    background-color: $gray-l4;
+    max-width: none;
+
+    .user-messages {
+      max-width: map-get($container-max-widths, xl);
+      margin: auto;
+      padding: $baseline/2;
+    }
   }
 
   .ui-loading-indicator {
@@ -199,7 +212,7 @@
         line-height: 1.3em;
         text-align: center;
         z-index: 7;
-        color: $base-font-color;
+        color: $body-color;
       }
 
       .upload-button-input {
@@ -253,23 +266,65 @@
 
       width: 100%;
       margin: 0 auto;
-      border: 1px solid $gray-l3;
+      border-bottom: 1px solid $gray-l3;
       background-color: $gray-l4;
-      padding: ($baseline*0.75) 0;
+      padding: ($baseline*0.75) 5%;
+      display: table;
+
+      .wrapper-profile-records {
+        display: table-row;
+
+        button {
+          @extend %btn-secondary-blue-outline;
+
+          margin-top: 1em;
+          background: $blue;
+          color: #fff;
+        }
+      }
+
+      @include media-breakpoint-up(sm) {
+        .wrapper-profile-records {
+          display: table-cell;
+          vertical-align: middle;
+          white-space: nowrap;
+
+          button {
+            margin-top: 0;
+          }
+        }
+      }
 
       .u-field-account_privacy {
         @extend .container;
 
+        display: table-cell;
         border: none;
         box-shadow: none;
-        padding: 0 ($baseline*3);
+        padding: 0;
+        margin: 0;
+        vertical-align: middle;
+
+        @media (max-width: $learner-profile-container-flex) { // Switch to map-get($grid-breakpoints,md) for bootstrap
+          max-width: calc(100% - 40px);
+          min-width: auto;
+        }
+
+        .btn-change-privacy {
+          @extend %btn-primary-blue;
+
+          padding-top: 4px;
+          padding-bottom: 5px;
+          background-image: none;
+          box-shadow: none;
+        }
       }
 
       .u-field-title {
         @extend %t-strong;
 
         width: auto;
-        color: $base-font-color;
+        color: $body-color;
         cursor: text;
         text-shadow: none; // override bad lms styles on labels
       }
@@ -285,7 +340,7 @@
 
         width: 100%;
         padding: 0;
-        color: $base-font-color;
+        color: $body-color;
 
         .u-field-message-notification {
           color: $gray-d2;
@@ -297,28 +352,30 @@
   .wrapper-profile-sections {
     @extend .container;
 
-    @include padding($baseline*1.5, $baseline*1.5, $baseline*1.5, 0);
+    @include padding($baseline*1.5, 5%, $baseline*1.5, 5%);
 
+    display: flex;
     min-width: 0;
+    max-width: 100%;
 
     @media (max-width: $learner-profile-container-flex) { // Switch to map-get($grid-breakpoints,md) for bootstrap
       @include margin-left(0);
-      @include padding($baseline*1.5, 0, $baseline*1.5, 0);
+
+      flex-wrap: wrap;
     }
   }
 
   .profile-header {
-    @include padding(0, $baseline*2, $baseline, $baseline*3);
-
-    @media (max-width: $learner-profile-container-flex) { // Switch to map-get($grid-breakpoints,md) for bootstrap
-      @include padding(0, $baseline*2, $baseline, $baseline*0.75);
-    }
+    max-width: map-get($container-max-widths, xl);
+    margin: auto;
+    padding: $baseline 5% 0;
 
     .header {
       @extend %t-title4;
       @extend %t-ultrastrong;
 
       display: inline-block;
+      color: #222;
     }
 
     .subheader {
@@ -328,14 +385,10 @@
 
   .wrapper-profile-section-container-one {
     @media (max-width: $learner-profile-container-flex) { // Switch to map-get($grid-breakpoints,md) for bootstrap
-      width: 90%;
-      padding: 0 5%;
+      width: 100%;
     }
 
     .wrapper-profile-section-one {
-      @include float(left);
-      @include margin-left($baseline*3);
-
       width: 300px;
       background-color: $white;
       border-top: 5px solid $blue;
@@ -379,7 +432,7 @@
 
           @include padding(0, 0, 0, 3px);
 
-          color: $base-font-color;
+          color: $body-color;
           margin-top: $baseline/5;
 
           .u-field-value,
@@ -390,7 +443,7 @@
           }
 
           .u-field-value-readonly {
-            font-family: $sans-serif;
+            font-family: $font-family-sans-serif;
             color: $darkest-base-font-color;
           }
 
@@ -422,7 +475,7 @@
         & > .u-field {
           &:not(:first-child) {
             font-size: $body-font-size;
-            color: $base-font-color;
+            color: $body-color;
             font-weight: $font-light;
             margin-bottom: 0;
           }
@@ -459,14 +512,13 @@
     @include float(left);
     @include padding-left($baseline);
 
-    width: calc(100% - 380px);
-    max-width: $learner-profile-container-flex; // Switch to map-get($grid-breakpoints,md) for bootstrap
-    font-family: $sans-serif;
+    font-family: $font-family-sans-serif;
+    flex-grow: 1;
 
     @media (max-width: $learner-profile-container-flex) { // Switch to map-get($grid-breakpoints,md) for bootstrap
       width: 90%;
       margin-top: $baseline;
-      padding: 0 5%;
+      padding: 0;
     }
 
     .u-field-textarea {
@@ -502,7 +554,7 @@
       margin-bottom: ($baseline/4);
       color: $gray-d3;
       width: 100%;
-      font: $font-semibold 1.4em/1.4em $sans-serif;
+      font: $font-semibold 1.4em/1.4em $font-family-sans-serif;
     }
 
     .u-field-value {
@@ -549,7 +601,7 @@
         @include padding-right(5px);
 
         vertical-align: middle;
-        color: $base-font-color;
+        color: $body-color;
       }
 
       .u-field-title {
@@ -563,7 +615,7 @@
 
         @extend %t-copy-sub1;
 
-        color: $base-font-color;
+        color: $body-color;
       }
 
       &:hover {
@@ -578,10 +630,10 @@
 
     .wrapper-u-field {
       font-size: $body-font-size;
-      color: $base-font-color;
+      color: $body-color;
 
       .u-field-header .u-field-title {
-        color: $base-font-color;
+        color: $body-color;
       }
 
       .u-field-footer {

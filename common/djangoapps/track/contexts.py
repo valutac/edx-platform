@@ -3,8 +3,9 @@ import logging
 
 from opaque_keys import InvalidKeyError
 from opaque_keys.edx.keys import CourseKey
+from six import text_type
 
-from util.request import COURSE_REGEX
+from openedx.core.lib.request_utils import COURSE_REGEX
 
 log = logging.getLogger(__name__)
 
@@ -51,6 +52,6 @@ def course_context_from_course_id(course_id):
     # TODO: Make this accept any CourseKey, and serialize it using .to_string
     assert isinstance(course_id, CourseKey)
     return {
-        'course_id': course_id.to_deprecated_string(),
+        'course_id': text_type(course_id),
         'org_id': course_id.org,
     }

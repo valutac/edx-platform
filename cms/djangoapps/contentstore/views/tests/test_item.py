@@ -4,21 +4,21 @@ from datetime import datetime, timedelta
 
 import ddt
 from django.conf import settings
-from django.core.urlresolvers import reverse
+from django.urls import reverse
 from django.http import Http404
 from django.test import TestCase
 from django.test.client import RequestFactory
 from mock import Mock, PropertyMock, patch
 from opaque_keys import InvalidKeyError
 from opaque_keys.edx.keys import CourseKey, UsageKey
-from opaque_keys.edx.locations import Location
+from opaque_keys.edx.locator import BlockUsageLocator, CourseLocator
 from pyquery import PyQuery
 from pytz import UTC
+from web_fragments.fragment import Fragment
 from webob import Response
 from xblock.core import XBlockAside
 from xblock.exceptions import NoSuchHandlerError
 from xblock.fields import Scope, ScopeIds, String
-from xblock.fragment import Fragment
 from xblock.runtime import DictKeyValueStore, KvsFieldData
 from xblock.test.tools import TestRuntime
 from xblock.validation import ValidationMessage
@@ -33,10 +33,10 @@ from contentstore.views.item import (
     _get_source_index,
     _xblock_type_and_display_name,
     add_container_page_publishing_info,
-    create_xblock_info
+    create_xblock_info,
+    highlights_setting,
 )
 from lms_xblock.mixin import NONSENSICAL_ACCESS_RESTRICTION
-from openedx.core.djangoapps.self_paced.models import SelfPacedConfiguration
 from student.tests.factories import UserFactory
 from xblock_django.models import XBlockConfiguration, XBlockStudioConfiguration, XBlockStudioConfigurationFlag
 from xblock_django.user_service import DjangoXBlockUserService
@@ -111,7 +111,7 @@ class ItemTest(CourseTestCase):
             data['display_name'] = display_name
         if boilerplate is not None:
             data['boilerplate'] = boilerplate
-        return self.client.ajax_post(reverse('contentstore.views.xblock_handler'), json.dumps(data))
+        return self.client.ajax_post(reverse('xblock_handler'), json.dumps(data))
 
     def _create_vertical(self, parent_usage_key=None):
         """
@@ -125,6 +125,7 @@ class ItemTest(CourseTestCase):
 @ddt.ddt
 class GetItemTest(ItemTest):
     """Tests for '/xblock' GET url."""
+    shard = 1
 
     def _get_preview(self, usage_key, data=None):
         """ Makes a request to xblock preview handler """
@@ -383,7 +384,7 @@ class GetItemTest(ItemTest):
                 "scheme": "enrollment_track",
                 "groups": [
                     {
-                        "id": settings.COURSE_ENROLLMENT_MODES["audit"],
+                        "id": settings.COURSE_ENROLLMENT_MODES["audit"]["id"],
                         "name": "Audit",
                         "selected": False,
                         "deleted": False,
@@ -469,6 +470,8 @@ class GetItemTest(ItemTest):
 @ddt.ddt
 class DeleteItem(ItemTest):
     """Tests for '/xblock' DELETE url."""
+    shard = 1
+
     @ddt.data(ModuleStoreEnum.Type.mongo, ModuleStoreEnum.Type.split)
     def test_delete_static_page(self, store):
         course = CourseFactory.create(default_store=store)
@@ -485,6 +488,8 @@ class TestCreateItem(ItemTest):
     """
     Test the create_item handler thoroughly
     """
+    shard = 1
+
     def test_create_nicely(self):
         """
         Try the straightforward use cases
@@ -652,7 +657,7 @@ class DuplicateHelper(object):
         if display_name is not None:
             data['display_name'] = display_name
 
-        resp = self.client.ajax_post(reverse('contentstore.views.xblock_handler'), json.dumps(data))
+        resp = self.client.ajax_post(reverse('xblock_handler'), json.dumps(data))
         return self.response_usage_key(resp)
 
 
@@ -660,6 +665,8 @@ class TestDuplicateItem(ItemTest, DuplicateHelper):
     """
     Test the duplicate method.
     """
+    shard = 1
+
     def setUp(self):
         """ Creates the test course structure and a few components to 'duplicate'. """
         super(TestDuplicateItem, self).setUp()
@@ -766,6 +773,8 @@ class TestMoveItem(ItemTest):
     """
     Tests for move item.
     """
+    shard = 1
+
     def setUp(self):
         """
         Creates the test course structure to build course outline tree.
@@ -863,7 +872,7 @@ class TestMoveItem(ItemTest):
             data['target_index'] = target_index
 
         return self.client.patch(
-            reverse('contentstore.views.xblock_handler'),
+            reverse('xblock_handler'),
             json.dumps(data),
             content_type='application/json'
         )
@@ -1146,7 +1155,7 @@ class TestMoveItem(ItemTest):
         data = {'move_source_locator': unicode(self.html_usage_key)}
         with self.assertRaises(InvalidKeyError):
             self.client.patch(
-                reverse('contentstore.views.xblock_handler'),
+                reverse('xblock_handler'),
                 json.dumps(data),
                 content_type='application/json'
             )
@@ -1156,7 +1165,7 @@ class TestMoveItem(ItemTest):
         Test patch request without providing a move source locator.
         """
         response = self.client.patch(
-            reverse('contentstore.views.xblock_handler')
+            reverse('xblock_handler')
         )
         self.assertEqual(response.status_code, 400)
         response = json.loads(response.content)
@@ -1307,7 +1316,7 @@ class TestMoveItem(ItemTest):
         }
         with self.assertRaises(ItemNotFoundError):
             self.client.patch(
-                reverse('contentstore.views.xblock_handler'),
+                reverse('xblock_handler'),
                 json.dumps(data),
                 content_type='application/json'
             )
@@ -1317,6 +1326,8 @@ class TestDuplicateItemWithAsides(ItemTest, DuplicateHelper):
     """
     Test the duplicate method for blocks with asides.
     """
+    shard = 1
+
     MODULESTORE = TEST_DATA_SPLIT_MODULESTORE
 
     def setUp(self):
@@ -1353,7 +1364,7 @@ class TestDuplicateItemWithAsides(ItemTest, DuplicateHelper):
 
             key_store = DictKeyValueStore()
             field_data = KvsFieldData(key_store)
-            runtime = TestRuntime(services={'field-data': field_data})  # pylint: disable=abstract-class-instantiated
+            runtime = TestRuntime(services={'field-data': field_data})
 
             def_id = runtime.id_generator.create_definition(block_type)
             usage_id = runtime.id_generator.create_usage(def_id)
@@ -1379,6 +1390,8 @@ class TestEditItemSetup(ItemTest):
     """
     Setup for xblock update tests.
     """
+    shard = 1
+
     def setUp(self):
         """ Creates the test course structure and a couple problems to 'edit'. """
         super(TestEditItemSetup, self).setUp()
@@ -1405,10 +1418,13 @@ class TestEditItemSetup(ItemTest):
         self.course_update_url = reverse_usage_url("xblock_handler", self.usage_key)
 
 
+@ddt.ddt
 class TestEditItem(TestEditItemSetup):
     """
     Test xblock update.
     """
+    shard = 1
+
     def test_delete_field(self):
         """
         Sending null in for a field 'deletes' it
@@ -1458,6 +1474,32 @@ class TestEditItem(TestEditItemSetup):
         sequential = self.get_item_from_modulestore(self.seq_usage_key)
         self.assertEqual(sequential.due, datetime(2010, 11, 22, 4, 0, tzinfo=UTC))
         self.assertEqual(sequential.start, datetime(2010, 9, 12, 14, 0, tzinfo=UTC))
+
+    @ddt.data(
+        '1000-01-01T00:00Z',
+        '0150-11-21T14:45Z',
+        '1899-12-31T23:59Z',
+        '1789-06-06T22:10Z',
+        '1001-01-15T19:32Z',
+    )
+    def test_xblock_due_date_validity(self, date):
+        """
+        Test due date for the subsection is not pre-1900
+        """
+        self.client.ajax_post(
+            self.seq_update_url,
+            data={'metadata': {'due': date}}
+        )
+        sequential = self.get_item_from_modulestore(self.seq_usage_key)
+        xblock_info = create_xblock_info(
+            sequential,
+            include_child_info=True,
+            include_children_predicate=ALWAYS,
+            user=self.user
+        )
+        # Both display and actual value should be None
+        self.assertEquals(xblock_info['due_date'], u'')
+        self.assertIsNone(xblock_info['due'])
 
     def test_update_generic_fields(self):
         new_display_name = 'New Display Name'
@@ -1848,6 +1890,7 @@ class TestEditItemSplitMongo(TestEditItemSetup):
     """
     Tests for EditItem running on top of the SplitMongoModuleStore.
     """
+    shard = 1
     MODULESTORE = TEST_DATA_SPLIT_MODULESTORE
 
     def test_editing_view_wrappers(self):
@@ -1869,6 +1912,8 @@ class TestEditSplitModule(ItemTest):
     """
     Tests around editing instances of the split_test module.
     """
+    shard = 1
+
     def setUp(self):
         super(TestEditSplitModule, self).setUp()
         self.user = UserFactory()
@@ -2090,6 +2135,8 @@ class TestEditSplitModule(ItemTest):
 
 @ddt.ddt
 class TestComponentHandler(TestCase):
+    shard = 1
+
     def setUp(self):
         super(TestComponentHandler, self).setUp()
 
@@ -2105,7 +2152,7 @@ class TestComponentHandler(TestCase):
         self.descriptor = self.modulestore.return_value.get_item.return_value
 
         self.usage_key_string = unicode(
-            Location('dummy_org', 'dummy_course', 'dummy_run', 'dummy_category', 'dummy_name')
+            BlockUsageLocator(CourseLocator('dummy_org', 'dummy_course', 'dummy_run'), 'dummy_category', 'dummy_name')
         )
 
         self.user = UserFactory()
@@ -2150,6 +2197,7 @@ class TestComponentTemplates(CourseTestCase):
     """
     Unit tests for the generation of the component templates for a course.
     """
+    shard = 1
 
     def setUp(self):
         super(TestComponentTemplates, self).setUp()
@@ -2385,11 +2433,14 @@ class TestXBlockInfo(ItemTest):
     """
     Unit tests for XBlock's outline handling.
     """
+    shard = 1
+
     def setUp(self):
         super(TestXBlockInfo, self).setUp()
         user_id = self.user.id
         self.chapter = ItemFactory.create(
-            parent_location=self.course.location, category='chapter', display_name="Week 1", user_id=user_id
+            parent_location=self.course.location, category='chapter', display_name="Week 1", user_id=user_id,
+            highlights=['highlight'],
         )
         self.sequential = ItemFactory.create(
             parent_location=self.chapter.location, category='sequential', display_name="Lesson 1", user_id=user_id
@@ -2570,6 +2621,16 @@ class TestXBlockInfo(ItemTest):
 
             self.assertEqual(xblock_info['start'], DEFAULT_START_DATE.strftime('%Y-%m-%dT%H:%M:%SZ'))
 
+    def test_highlights_enabled(self):
+        self.course.highlights_enabled_for_messaging = True
+        self.store.update_item(self.course, None)
+        chapter = self.store.get_item(self.chapter.location)
+        with highlights_setting.override():
+            chapter_xblock_info = create_xblock_info(chapter)
+            course_xblock_info = create_xblock_info(self.course)
+            self.assertTrue(chapter_xblock_info['highlights_enabled'])
+            self.assertTrue(course_xblock_info['highlights_enabled_for_messaging'])
+
     def validate_course_xblock_info(self, xblock_info, has_child_info=True, course_outline=False):
         """
         Validate that the xblock info is correct for the test course.
@@ -2578,6 +2639,7 @@ class TestXBlockInfo(ItemTest):
         self.assertEqual(xblock_info['id'], unicode(self.course.location))
         self.assertEqual(xblock_info['display_name'], self.course.display_name)
         self.assertTrue(xblock_info['published'])
+        self.assertFalse(xblock_info['highlights_enabled_for_messaging'])
 
         # Finally, validate the entire response for consistency
         self.validate_xblock_info_consistency(xblock_info, has_child_info=has_child_info, course_outline=course_outline)
@@ -2596,6 +2658,8 @@ class TestXBlockInfo(ItemTest):
         self.assertEqual(xblock_info['graded'], False)
         self.assertEqual(xblock_info['due'], None)
         self.assertEqual(xblock_info['format'], None)
+        self.assertEqual(xblock_info['highlights'], self.chapter.highlights)
+        self.assertFalse(xblock_info['highlights_enabled'])
 
         # Finally, validate the entire response for consistency
         self.validate_xblock_info_consistency(xblock_info, has_child_info=has_child_info)
@@ -2717,6 +2781,8 @@ class TestLibraryXBlockInfo(ModuleStoreTestCase):
     """
     Unit tests for XBlock Info for XBlocks in a content library
     """
+    shard = 1
+
     def setUp(self):
         super(TestLibraryXBlockInfo, self).setUp()
         user_id = self.user.id
@@ -2766,6 +2832,8 @@ class TestLibraryXBlockCreation(ItemTest):
     """
     Tests the adding of XBlocks to Library
     """
+    shard = 1
+
     def test_add_xblock(self):
         """
         Verify we can add an XBlock to a Library.
@@ -2802,6 +2870,7 @@ class TestXBlockPublishingInfo(ItemTest):
     """
     Unit tests for XBlock's outline handling.
     """
+    shard = 1
     FIRST_SUBSECTION_PATH = [0]
     FIRST_UNIT_PATH = [0, 0]
     SECOND_UNIT_PATH = [0, 1]
@@ -3130,7 +3199,6 @@ class TestXBlockPublishingInfo(ItemTest):
         Test that when item was initially in `scheduled` state in instructor mode, change course pacing to self-paced,
         now in self-paced course, item should have `live` visibility state.
         """
-        SelfPacedConfiguration(enabled=True).save()
 
         # Create course, chapter and setup future release date to make chapter in scheduled state
         course = CourseFactory.create(default_store=store_type)

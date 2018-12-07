@@ -3,20 +3,27 @@ This module contains signals needed for email integration
 """
 import datetime
 import logging
+from random import randint
 
 import crum
+from celery.exceptions import TimeoutError
 from django.conf import settings
 from django.dispatch import receiver
-from sailthru.sailthru_client import SailthruClient
 from sailthru.sailthru_error import SailthruClientError
-from celery.exceptions import TimeoutError
+from six import text_type
 
+import third_party_auth
+from course_modes.models import CourseMode
 from email_marketing.models import EmailMarketingConfiguration
-from lms.djangoapps.email_marketing.tasks import update_user, update_user_email, get_email_cookies_via_sailthru
+from lms.djangoapps.email_marketing.tasks import get_email_cookies_via_sailthru, update_user, update_user_email
+from openedx.core.djangoapps.user_authn.cookies import CREATE_LOGON_COOKIE
 from openedx.core.djangoapps.lang_pref import LANGUAGE_KEY
-from student.cookies import CREATE_LOGON_COOKIE
+from openedx.core.djangoapps.waffle_utils import WaffleSwitchNamespace
+from student.signals import SAILTHRU_AUDIT_PURCHASE
 from student.views import REGISTER_USER
 from util.model_utils import USER_FIELD_CHANGED
+
+from .tasks import update_course_enrollment
 
 log = logging.getLogger(__name__)
 
@@ -24,6 +31,27 @@ log = logging.getLogger(__name__)
 CHANGED_FIELDNAMES = ['username', 'is_active', 'name', 'gender', 'education',
                       'age', 'level_of_education', 'year_of_birth',
                       'country', LANGUAGE_KEY]
+
+WAFFLE_NAMESPACE = 'sailthru'
+WAFFLE_SWITCHES = WaffleSwitchNamespace(name=WAFFLE_NAMESPACE)
+
+SAILTHRU_AUDIT_PURCHASE_ENABLED = 'audit_purchase_enabled'
+
+
+@receiver(SAILTHRU_AUDIT_PURCHASE)
+def update_sailthru(sender, user, mode, course_id, **kwargs):  # pylint: disable=unused-argument
+    """
+    Receives signal and calls a celery task to update the
+    enrollment track
+    Arguments:
+        user: current user
+        course_id: course key of a course
+    Returns:
+        None
+    """
+    if WAFFLE_SWITCHES.is_enabled(SAILTHRU_AUDIT_PURCHASE_ENABLED) and mode in CourseMode.AUDIT_MODES:
+        email = str(user.email)
+        update_course_enrollment.delay(email, course_id, mode, site=_get_current_site())
 
 
 @receiver(CREATE_LOGON_COOKIE)
@@ -67,10 +95,13 @@ def add_email_marketing_cookies(sender, response=None, user=None,
         _log_sailthru_api_call_time(time_before_call)
 
     except TimeoutError as exc:
-        log.error("Timeout error while attempting to obtain cookie from Sailthru: %s", unicode(exc))
+        log.error("Timeout error while attempting to obtain cookie from Sailthru: %s", text_type(exc))
         return response
     except SailthruClientError as exc:
-        log.error("Exception attempting to obtain cookie from Sailthru: %s", unicode(exc))
+        log.error("Exception attempting to obtain cookie from Sailthru: %s", text_type(exc))
+        return response
+    except Exception:
+        log.error("Exception Connecting to celery task for %s", user.email)
         return response
 
     if not cookie:
@@ -106,7 +137,7 @@ def email_marketing_register_user(sender, user, registration,
         return
 
     # ignore anonymous users
-    if user.is_anonymous():
+    if user.is_anonymous:
         return
 
     # perform update asynchronously
@@ -132,7 +163,7 @@ def email_marketing_user_field_changed(sender, user=None, table=None, setting=No
     """
 
     # ignore anonymous users
-    if user.is_anonymous():
+    if user.is_anonymous:
         return
 
     # ignore anything but User, Profile or UserPreference tables
@@ -148,9 +179,27 @@ def email_marketing_user_field_changed(sender, user=None, table=None, setting=No
         if not email_config.enabled:
             return
 
+        # Is the status of the user account changing to active?
+        is_activation = (setting == 'is_active') and new_value is True
+
+        # Is this change in the context of an SSO-initiated registration?
+        third_party_provider = None
+        if third_party_auth.is_enabled():
+            running_pipeline = third_party_auth.pipeline.get(crum.get_current_request())
+            if running_pipeline:
+                third_party_provider = third_party_auth.provider.Registry.get_from_pipeline(running_pipeline)
+
+        # Send a welcome email if the user account is being activated
+        # and we are not in a SSO registration flow whose associated
+        # identity provider is configured to allow for the sending
+        # of a welcome email.
+        send_welcome_email = is_activation and (
+            third_party_provider is None or third_party_provider.send_welcome_email
+        )
+
         # set the activation flag when the user is marked as activated
         update_user.delay(_create_sailthru_user_vars(user, user.profile), user.email, site=_get_current_site(),
-                          new_user=False, activation=(setting == 'is_active') and new_value is True)
+                          new_user=False, activation=send_welcome_email)
 
     elif setting == 'email':
         # email update is special case
@@ -178,10 +227,11 @@ def _create_sailthru_user_vars(user, profile, registration=None):
 
         if profile.year_of_birth:
             sailthru_vars['year_of_birth'] = profile.year_of_birth
-        sailthru_vars['country'] = unicode(profile.country.code)
+        sailthru_vars['country'] = text_type(profile.country.code)
 
     if registration:
         sailthru_vars['activation_key'] = registration.activation_key
+        sailthru_vars['signupNumber'] = randint(0, 9)
 
     return sailthru_vars
 

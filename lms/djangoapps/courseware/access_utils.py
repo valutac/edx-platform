@@ -7,13 +7,13 @@ from datetime import datetime, timedelta
 from logging import getLogger
 
 from django.conf import settings
-from django.utils.timezone import UTC
+from pytz import UTC
 
 from courseware.access_response import AccessResponse, StartDateError
 from courseware.masquerade import is_masquerading_as_student
 from openedx.features.course_experience import COURSE_PRE_START_ACCESS_FLAG
 from student.roles import CourseBetaTesterRole
-from xmodule.util.django import get_current_request_hostname
+from xmodule.util.xmodule_django import get_current_request_hostname
 
 DEBUG_ACCESS = False
 log = getLogger(__name__)
@@ -64,7 +64,7 @@ def check_start_date(user, days_early_for_beta, start, course_key):
     if start_dates_disabled and not is_masquerading_as_student(user, course_key):
         return ACCESS_GRANTED
     else:
-        now = datetime.now(UTC())
+        now = datetime.now(UTC)
         if start is None or in_preview_mode():
             return ACCESS_GRANTED
 
@@ -91,6 +91,6 @@ def check_course_open_for_learner(user, course):
     Returns:
         AccessResponse: Either ACCESS_GRANTED or StartDateError.
     """
-    if COURSE_PRE_START_ACCESS_FLAG.is_enabled(course.id):
+    if COURSE_PRE_START_ACCESS_FLAG.is_enabled():
         return ACCESS_GRANTED
     return check_start_date(user, course.days_early_for_beta, course.start, course.id)

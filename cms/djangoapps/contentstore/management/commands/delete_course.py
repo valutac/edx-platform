@@ -1,3 +1,6 @@
+from __future__ import print_function
+from six import text_type
+
 from django.core.management.base import BaseCommand, CommandError
 from opaque_keys import InvalidKeyError
 from opaque_keys.edx.keys import CourseKey
@@ -32,7 +35,10 @@ class Command(BaseCommand):
     help = 'Delete a MongoDB backed course'
 
     def add_arguments(self, parser):
-        parser.add_argument('course_key', help='ID of the course to delete.')
+        parser.add_argument(
+            'course_key',
+            help='ID of the course to delete.',
+        )
 
         parser.add_argument(
             '--keep-instructors',
@@ -50,7 +56,13 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         try:
-            course_key = CourseKey.from_string(options['course_key'])
+            # a course key may have unicode chars in it
+            try:
+                course_key = text_type(options['course_key'], 'utf8')
+            # May already be decoded to unicode if coming in through tests, this is ok.
+            except TypeError:
+                course_key = text_type(options['course_key'])
+            course_key = CourseKey.from_string(course_key)
         except InvalidKeyError:
             raise CommandError('Invalid course_key: {}'.format(options['course_key']))
 

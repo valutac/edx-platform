@@ -2,37 +2,42 @@
 Views for the course home page.
 """
 
-from django.core.context_processors import csrf
-from django.core.urlresolvers import reverse
+from django.urls import reverse
+from django.template.context_processors import csrf
 from django.template.loader import render_to_string
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import cache_control
 from django.views.decorators.csrf import ensure_csrf_cookie
+from opaque_keys.edx.keys import CourseKey
+from web_fragments.fragment import Fragment
 
-from commerce.utils import EcommerceService
+from course_modes.models import get_cosmetic_verified_display_price
 from courseware.access import has_access
-from courseware.courses import (
-    can_self_enroll_in_course,
-    get_course_info_section,
-    get_course_with_access,
+from courseware.courses import can_self_enroll_in_course, get_course_info_section, get_course_with_access
+from lms.djangoapps.commerce.utils import EcommerceService
+from lms.djangoapps.course_goals.api import (
+    get_course_goal,
+    get_course_goal_options,
+    get_goal_api_url,
+    has_course_goal_permission
 )
 from lms.djangoapps.courseware.exceptions import CourseAccessRedirect
 from lms.djangoapps.courseware.views.views import CourseTabView
-from opaque_keys.edx.keys import CourseKey
 from openedx.core.djangoapps.plugin_api.views import EdxFragmentView
+from openedx.core.djangoapps.util.maintenance_banner import add_maintenance_banner
 from openedx.features.course_experience.course_tools import CourseToolsPluginManager
 from student.models import CourseEnrollment
 from util.views import ensure_valid_course_key
-from web_fragments.fragment import Fragment
 
-from .. import LATEST_UPDATE_FLAG, SHOW_UPGRADE_MSG_ON_COURSE_HOME
-from ..utils import get_course_outline_block_tree
+from .. import LATEST_UPDATE_FLAG, SHOW_UPGRADE_MSG_ON_COURSE_HOME, USE_BOOTSTRAP_FLAG
+from ..utils import get_course_outline_block_tree, get_resume_block
 from .course_dates import CourseDatesFragmentView
 from .course_home_messages import CourseHomeMessageFragmentView
 from .course_outline import CourseOutlineFragmentView
 from .course_sock import CourseSockFragmentView
 from .latest_update import LatestUpdateFragmentView
 from .welcome_message import WelcomeMessageFragmentView
+
 
 EMPTY_HANDOUTS_HTML = u'<ol></ol>'
 
@@ -44,11 +49,18 @@ class CourseHomeView(CourseTabView):
     @method_decorator(ensure_csrf_cookie)
     @method_decorator(cache_control(no_cache=True, no_store=True, must_revalidate=True))
     @method_decorator(ensure_valid_course_key)
+    @method_decorator(add_maintenance_banner)
     def get(self, request, course_id, **kwargs):
         """
         Displays the home page for the specified course.
         """
         return super(CourseHomeView, self).get(request, course_id, 'courseware', **kwargs)
+
+    def uses_bootstrap(self, request, course, tab):
+        """
+        Returns true if the USE_BOOTSTRAP Waffle flag is enabled.
+        """
+        return USE_BOOTSTRAP_FLAG.is_enabled(course.id)
 
     def render_to_fragment(self, request, course=None, tab=None, **kwargs):
         course_id = unicode(course.id)
@@ -67,30 +79,15 @@ class CourseHomeFragmentView(EdxFragmentView):
 
         Returns a tuple: (has_visited_course, resume_course_url)
             has_visited_course: True if the user has ever visted the course, False otherwise.
-            resume_course_url: The URL of the last accessed block if the user has visited the course,
+            resume_course_url: The URL of the 'resume course' block if the user has visited the course,
                 otherwise the URL of the course root.
 
         """
-
-        def get_last_accessed_block(block):
-            """
-            Gets the deepest block marked as 'last_accessed'.
-            """
-            if not block['last_accessed']:
-                return None
-            if not block.get('children'):
-                return block
-            for child in block['children']:
-                last_accessed_block = get_last_accessed_block(child)
-                if last_accessed_block:
-                    return last_accessed_block
-            return block
-
         course_outline_root_block = get_course_outline_block_tree(request, course_id)
-        last_accessed_block = get_last_accessed_block(course_outline_root_block) if course_outline_root_block else None
-        has_visited_course = bool(last_accessed_block)
-        if last_accessed_block:
-            resume_course_url = last_accessed_block['lms_web_url']
+        resume_block = get_resume_block(course_outline_root_block) if course_outline_root_block else None
+        has_visited_course = bool(resume_block)
+        if resume_block:
+            resume_course_url = resume_block['lms_web_url']
         else:
             resume_course_url = course_outline_root_block['lms_web_url'] if course_outline_root_block else None
 
@@ -119,7 +116,7 @@ class CourseHomeFragmentView(EdxFragmentView):
         # Unenrolled users who are not course or global staff are given only a subset.
         enrollment = CourseEnrollment.get_enrollment(request.user, course_key)
         user_access = {
-            'is_anonymous': request.user.is_anonymous(),
+            'is_anonymous': request.user.is_anonymous,
             'is_enrolled': enrollment is not None,
             'is_staff': has_access(request.user, 'staff', course_key),
         }
@@ -154,6 +151,16 @@ class CourseHomeFragmentView(EdxFragmentView):
         # Get the course tools enabled for this user and course
         course_tools = CourseToolsPluginManager.get_enabled_course_tools(request, course_key)
 
+        # Check if the user can access the course goal functionality
+        has_goal_permission = has_course_goal_permission(request, course_id, user_access)
+
+        # Grab the current course goal and the acceptable course goal keys mapped to translated values
+        current_goal = get_course_goal(request.user, course_key)
+        goal_options = get_course_goal_options()
+
+        # Get the course goals api endpoint
+        goal_api_url = get_goal_api_url(request)
+
         # Grab the course home messages fragment to render any relevant django messages
         course_home_message_fragment = CourseHomeMessageFragmentView().render_to_fragment(
             request, course_id=course_id, user_access=user_access, **kwargs
@@ -165,15 +172,8 @@ class CourseHomeFragmentView(EdxFragmentView):
 
         # TODO Add switch to control deployment
         if SHOW_UPGRADE_MSG_ON_COURSE_HOME.is_enabled(course_key) and enrollment and enrollment.upgrade_deadline:
-            verified_mode = enrollment.verified_mode
-            if verified_mode:
-                upgrade_price = verified_mode.min_price
-
-                ecommerce_service = EcommerceService()
-                if ecommerce_service.is_enabled(request.user):
-                    upgrade_url = ecommerce_service.get_checkout_page_url(verified_mode.sku)
-                else:
-                    upgrade_url = reverse('verify_student_upgrade_and_verify', args=(course_key,))
+            upgrade_url = EcommerceService().upgrade_url(request.user, course_key)
+            upgrade_price = get_cosmetic_verified_display_price(course)
 
         # Render the course home fragment
         context = {
@@ -188,6 +188,11 @@ class CourseHomeFragmentView(EdxFragmentView):
             'resume_course_url': resume_course_url,
             'course_tools': course_tools,
             'dates_fragment': dates_fragment,
+            'username': request.user.username,
+            'goal_api_url': goal_api_url,
+            'has_goal_permission': has_goal_permission,
+            'goal_options': goal_options,
+            'current_goal': current_goal,
             'update_message_fragment': update_message_fragment,
             'course_sock_fragment': course_sock_fragment,
             'disable_courseware_js': True,

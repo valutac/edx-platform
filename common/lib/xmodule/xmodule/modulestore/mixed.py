@@ -322,6 +322,23 @@ class MixedModuleStore(ModuleStoreDraftAndPublished, ModuleStoreWriteBase):
         return courses.values()
 
     @strip_key
+    def get_library_summaries(self, **kwargs):
+        """
+        Returns a list of LibrarySummary objects.
+        Information contains `location`, `display_name`, `locator` of the libraries in this modulestore.
+        """
+        library_summaries = {}
+        for store in self.modulestores:
+            if not hasattr(store, 'get_libraries'):
+                continue
+            # fetch library summaries and filter out any duplicated entry across/within stores
+            for library_summary in store.get_library_summaries(**kwargs):
+                library_id = self._clean_locator_for_mapping(library_summary.location)
+                if library_id not in library_summaries:
+                    library_summaries[library_id] = library_summary
+        return library_summaries.values()
+
+    @strip_key
     def get_libraries(self, **kwargs):
         """
         Returns a list containing the top level XBlock of the libraries (LibraryRoot) in this modulestore.
@@ -636,12 +653,16 @@ class MixedModuleStore(ModuleStoreDraftAndPublished, ModuleStoreWriteBase):
         """
         # first make sure an existing course doesn't already exist in the mapping
         course_key = self.make_course_key(org, course, run)
+
+        log.info('Creating course run %s...', course_key)
         if course_key in self.mappings and self.mappings[course_key].has_course(course_key):
+            log.error('Cannot create course run %s. It already exists!', course_key)
             raise DuplicateCourseError(course_key, course_key)
 
         # create the course
         store = self._verify_modulestore_support(None, 'create_course')
         course = store.create_course(org, course, run, user_id, **kwargs)
+        log.info('Course run %s created successfully!', course_key)
 
         # add new course to the mapping
         self.mappings[course_key] = store

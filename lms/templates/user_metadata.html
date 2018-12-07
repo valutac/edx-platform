@@ -15,12 +15,20 @@ user_metadata = {
         'upgrade_link',
         'upgrade_price',
         'pacing_type',
+        'has_staff_access',
+        'forum_roles',
+        'partition_groups',
+        # TODO: clean up as part of REVO-28 (START)
+        'has_non_audit_enrollments',
+        # TODO: clean up as part of REtest_VO-28 (END)
     )
 }
 
 if user:
     user_metadata['username'] = user.username
     user_metadata['user_id'] = user.id
+    if hasattr(user, 'email'):
+        user_metadata['email'] = user.email
 
 for datekey in (
         'schedule_start',

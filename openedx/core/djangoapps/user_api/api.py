@@ -1,19 +1,24 @@
 import copy
+import crum
 
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
-from django.core.urlresolvers import reverse
+from django.urls import reverse
 from django.utils.translation import ugettext as _
 from django_countries import countries
 
 import accounts
 import third_party_auth
 from edxmako.shortcuts import marketing_link
+from openedx.core.djangolib.markup import HTML, Text
 from openedx.core.djangoapps.site_configuration import helpers as configuration_helpers
 from openedx.core.djangoapps.user_api.helpers import FormDescription
 from openedx.features.enterprise_support.api import enterprise_customer_for_request
 from student.forms import get_registration_extension_form
 from student.models import UserProfile
+from util.password_policy_validators import (
+    password_validators_instruction_texts, password_validators_restrictions, DEFAULT_MAX_PASSWORD_LENGTH,
+)
 
 
 def get_password_reset_form():
@@ -61,7 +66,7 @@ def get_password_reset_form():
     return form_desc
 
 
-def get_login_session_form():
+def get_login_session_form(request):
     """Return a description of the login form.
 
     This decouples clients from the API definition:
@@ -76,6 +81,7 @@ def get_login_session_form():
 
     """
     form_desc = FormDescription("post", reverse("user_api_login_session"))
+    _apply_third_party_auth_overrides(request, form_desc)
 
     # Translators: This label appears above a field on the login form
     # meant to hold the user's email address.
@@ -111,9 +117,7 @@ def get_login_session_form():
         "password",
         label=password_label,
         field_type="password",
-        restrictions={
-            "max_length": accounts.PASSWORD_MAX_LENGTH,
-        }
+        restrictions={'max_length': DEFAULT_MAX_PASSWORD_LENGTH}
     )
 
     form_desc.add_field(
@@ -125,6 +129,38 @@ def get_login_session_form():
     )
 
     return form_desc
+
+
+def _apply_third_party_auth_overrides(request, form_desc):
+    """Modify the login form if the user has authenticated with a third-party provider.
+    If a user has successfully authenticated with a third-party provider,
+    and an email is associated with it then we fill in the email field with readonly property.
+    Arguments:
+        request (HttpRequest): The request for the registration form, used
+            to determine if the user has successfully authenticated
+            with a third-party provider.
+        form_desc (FormDescription): The registration form description
+    """
+    if third_party_auth.is_enabled():
+        running_pipeline = third_party_auth.pipeline.get(request)
+        if running_pipeline:
+            current_provider = third_party_auth.provider.Registry.get_from_pipeline(running_pipeline)
+            if current_provider and enterprise_customer_for_request(request):
+                pipeline_kwargs = running_pipeline.get('kwargs')
+
+                # Details about the user sent back from the provider.
+                details = pipeline_kwargs.get('details')
+                email = details.get('email', '')
+
+                # override the email field.
+                form_desc.override_field_properties(
+                    "email",
+                    default=email,
+                    restrictions={"readonly": "readonly"} if email else {
+                        "min_length": accounts.EMAIL_MIN_LENGTH,
+                        "max_length": accounts.EMAIL_MAX_LENGTH,
+                    }
+                )
 
 
 class RegistrationFormFactory(object):
@@ -143,6 +179,7 @@ class RegistrationFormFactory(object):
         "year_of_birth",
         "level_of_education",
         "company",
+        "job_title",
         "title",
         "mailing_address",
         "goals",
@@ -277,10 +314,6 @@ class RegistrationFormFactory(object):
         # meant to hold the user's email address.
         email_label = _(u"Email")
 
-        # Translators: This example email address is used as a placeholder in
-        # a field on the registration form meant to hold the user's email address.
-        email_placeholder = _(u"username@domain.com")
-
         # Translators: These instructions appear on the registration form, immediately
         # below a field meant to hold the user's email address.
         email_instructions = _(u"This is what you will use to login.")
@@ -289,7 +322,6 @@ class RegistrationFormFactory(object):
             "email",
             field_type="email",
             label=email_label,
-            placeholder=email_placeholder,
             instructions=email_instructions,
             restrictions={
                 "min_length": accounts.EMAIL_MIN_LENGTH,
@@ -308,6 +340,7 @@ class RegistrationFormFactory(object):
         # Translators: This label appears above a field on the registration form
         # meant to confirm the user's email address.
         email_label = _(u"Confirm Email")
+
         error_msg = accounts.REQUIRED_FIELD_CONFIRM_EMAIL_MSG
 
         form_desc.add_field(
@@ -330,10 +363,6 @@ class RegistrationFormFactory(object):
         # meant to hold the user's full name.
         name_label = _(u"Full Name")
 
-        # Translators: This example name is used as a placeholder in
-        # a field on the registration form meant to hold the user's name.
-        name_placeholder = _(u"Jane Q. Learner")
-
         # Translators: These instructions appear on the registration form, immediately
         # below a field meant to hold the user's full name.
         name_instructions = _(u"This name will be used on any certificates that you earn.")
@@ -341,7 +370,6 @@ class RegistrationFormFactory(object):
         form_desc.add_field(
             "name",
             label=name_label,
-            placeholder=name_placeholder,
             instructions=name_instructions,
             restrictions={
                 "max_length": accounts.NAME_MAX_LENGTH,
@@ -366,16 +394,10 @@ class RegistrationFormFactory(object):
             u"The name that will identify you in your courses. "
             u"It cannot be changed later."
         )
-
-        # Translators: This example username is used as a placeholder in
-        # a field on the registration form meant to hold the user's username.
-        username_placeholder = _(u"Jane_Q_Learner")
-
         form_desc.add_field(
             "username",
             label=username_label,
             instructions=username_instructions,
-            placeholder=username_placeholder,
             restrictions={
                 "min_length": accounts.USERNAME_MIN_LENGTH,
                 "max_length": accounts.USERNAME_MAX_LENGTH,
@@ -398,10 +420,8 @@ class RegistrationFormFactory(object):
             "password",
             label=password_label,
             field_type="password",
-            restrictions={
-                "min_length": accounts.PASSWORD_MIN_LENGTH,
-                "max_length": accounts.PASSWORD_MAX_LENGTH,
-            },
+            instructions=password_validators_instruction_texts(),
+            restrictions=password_validators_restrictions(),
             required=required
         )
 
@@ -418,7 +438,7 @@ class RegistrationFormFactory(object):
         error_msg = accounts.REQUIRED_FIELD_LEVEL_OF_EDUCATION_MSG
 
         # The labels are marked for translation in UserProfile model definition.
-        options = [(name, _(label)) for name, label in UserProfile.LEVEL_OF_EDUCATION_CHOICES]  # pylint: disable=translation-of-non-string
+        options = [(name, _(label)) for name, label in UserProfile.LEVEL_OF_EDUCATION_CHOICES]
         form_desc.add_field(
             "level_of_education",
             label=education_level_label,
@@ -443,7 +463,7 @@ class RegistrationFormFactory(object):
         gender_label = _(u"Gender")
 
         # The labels are marked for translation in UserProfile model definition.
-        options = [(name, _(label)) for name, label in UserProfile.GENDER_CHOICES]  # pylint: disable=translation-of-non-string
+        options = [(name, _(label)) for name, label in UserProfile.GENDER_CHOICES]
         form_desc.add_field(
             "gender",
             label=gender_label,
@@ -666,6 +686,23 @@ class RegistrationFormFactory(object):
             required=required
         )
 
+    def _add_job_title_field(self, form_desc, required=False):
+        """Add a Job Title field to a form description.
+        Arguments:
+            form_desc: A form description
+        Keyword Arguments:
+            required (bool): Whether this field is required; defaults to False
+        """
+        # Translators: This label appears above a field on the registration form
+        # which allows the user to input the Job Title
+        job_title_label = _(u"Job Title")
+
+        form_desc.add_field(
+            "job_title",
+            label=job_title_label,
+            required=required
+        )
+
     def _add_first_name_field(self, form_desc, required=False):
         """Add a First Name field to a form description.
         Arguments:
@@ -711,16 +748,17 @@ class RegistrationFormFactory(object):
         # form used to select the country in which the user lives.
         country_label = _(u"Country or Region of Residence")
 
+        error_msg = accounts.REQUIRED_FIELD_COUNTRY_MSG
+
+        # If we set a country code, make sure it's uppercase for the sake of the form.
+        # pylint: disable=protected-access
+        default_country = form_desc._field_overrides.get('country', {}).get('defaultValue')
+
         country_instructions = _(
             # Translators: These instructions appear on the registration form, immediately
             # below a field meant to hold the user's country.
             u"The country or region where you live."
         )
-
-        error_msg = accounts.REQUIRED_FIELD_COUNTRY_MSG
-
-        # If we set a country code, make sure it's uppercase for the sake of the form.
-        default_country = form_desc._field_overrides.get('country', {}).get('defaultValue')
         if default_country:
             form_desc.override_field_properties(
                 'country',
@@ -747,11 +785,12 @@ class RegistrationFormFactory(object):
         Keyword Arguments:
             required (bool): Whether this field is required; defaults to True
         """
+
+        separate_honor_and_tos = self._is_field_visible("terms_of_service")
         # Separate terms of service and honor code checkboxes
-        if self._is_field_visible("terms_of_service"):
+        if separate_honor_and_tos:
             terms_label = _(u"Honor Code")
             terms_link = marketing_link("HONOR")
-            terms_text = _(u"Review the Honor Code")
 
         # Combine terms of service and honor code checkboxes
         else:
@@ -759,13 +798,16 @@ class RegistrationFormFactory(object):
             # in order to register a new account.
             terms_label = _(u"Terms of Service and Honor Code")
             terms_link = marketing_link("HONOR")
-            terms_text = _(u"Review the Terms of Service and Honor Code")
 
         # Translators: "Terms of Service" is a legal document users must agree to
         # in order to register a new account.
-        label = _(u"I agree to the {platform_name} {terms_of_service}").format(
+        label = Text(_(
+            u"I agree to the {platform_name} {terms_of_service_link_start}{terms_of_service}{terms_of_service_link_end}"
+        )).format(
             platform_name=configuration_helpers.get_value("PLATFORM_NAME", settings.PLATFORM_NAME),
-            terms_of_service=terms_label
+            terms_of_service=terms_label,
+            terms_of_service_link_start=HTML("<a href='{terms_link}' target='_blank'>").format(terms_link=terms_link),
+            terms_of_service_link_end=HTML("</a>"),
         )
 
         # Translators: "Terms of Service" is a legal document users must agree to
@@ -774,18 +816,37 @@ class RegistrationFormFactory(object):
             platform_name=configuration_helpers.get_value("PLATFORM_NAME", settings.PLATFORM_NAME),
             terms_of_service=terms_label
         )
+        field_type = 'checkbox'
+
+        if not separate_honor_and_tos:
+            current_request = crum.get_current_request()
+
+            field_type = 'plaintext'
+
+            pp_link = marketing_link("PRIVACY")
+            label = Text(_(
+                u"By creating an account with {platform_name}, you agree \
+                  to abide by our {platform_name} \
+                  {terms_of_service_link_start}{terms_of_service}{terms_of_service_link_end} \
+                  and agree to our {privacy_policy_link_start}Privacy Policy{privacy_policy_link_end}."
+            )).format(
+                platform_name=configuration_helpers.get_value("PLATFORM_NAME", settings.PLATFORM_NAME),
+                terms_of_service=terms_label,
+                terms_of_service_link_start=HTML("<a href='{terms_url}' target='_blank'>").format(terms_url=terms_link),
+                terms_of_service_link_end=HTML("</a>"),
+                privacy_policy_link_start=HTML("<a href='{pp_url}' target='_blank'>").format(pp_url=pp_link),
+                privacy_policy_link_end=HTML("</a>"),
+            )
 
         form_desc.add_field(
             "honor_code",
             label=label,
-            field_type="checkbox",
+            field_type=field_type,
             default=False,
             required=required,
             error_messages={
                 "required": error_msg
             },
-            supplementalLink=terms_link,
-            supplementalText=terms_text
         )
 
     def _add_terms_of_service_field(self, form_desc, required=True):
@@ -799,13 +860,14 @@ class RegistrationFormFactory(object):
         # in order to register a new account.
         terms_label = _(u"Terms of Service")
         terms_link = marketing_link("TOS")
-        terms_text = _(u"Review the Terms of Service")
 
         # Translators: "Terms of service" is a legal document users must agree to
         # in order to register a new account.
-        label = _(u"I agree to the {platform_name} {terms_of_service}").format(
+        label = Text(_(u"I agree to the {platform_name} {tos_link_start}{terms_of_service}{tos_link_end}")).format(
             platform_name=configuration_helpers.get_value("PLATFORM_NAME", settings.PLATFORM_NAME),
-            terms_of_service=terms_label
+            terms_of_service=terms_label,
+            tos_link_start=HTML("<a href='{terms_link}' target='_blank'>").format(terms_link=terms_link),
+            tos_link_end=HTML("</a>"),
         )
 
         # Translators: "Terms of service" is a legal document users must agree to
@@ -824,8 +886,6 @@ class RegistrationFormFactory(object):
             error_messages={
                 "required": error_msg
             },
-            supplementalLink=terms_link,
-            supplementalText=terms_text
         )
 
     def _apply_third_party_auth_overrides(self, request, form_desc):
@@ -857,8 +917,11 @@ class RegistrationFormFactory(object):
                     # When the TPA Provider is configured to skip the registration form and we are in an
                     # enterprise context, we need to hide all fields except for terms of service and
                     # ensure that the user explicitly checks that field.
-                    hide_registration_fields_except_tos = (current_provider.skip_registration_form and
-                                                           enterprise_customer_for_request(request))
+                    hide_registration_fields_except_tos = (
+                        (
+                            current_provider.skip_registration_form and enterprise_customer_for_request(request)
+                        ) or current_provider.sync_learner_profile_data
+                    )
 
                     for field_name in self.DEFAULT_FIELDS + self.EXTRA_FIELDS:
                         if field_name in field_overrides:

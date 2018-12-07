@@ -7,7 +7,6 @@ import ddt
 import itertools
 import math
 import mock
-from nose.plugins.attrib import attr
 import pytz
 
 from django.conf import settings
@@ -17,7 +16,10 @@ from django.utils import timezone
 from PIL import Image
 
 from lms.djangoapps.certificates.api import get_active_web_certificate
+from openedx.core.djangoapps.catalog.tests.mixins import CatalogIntegrationMixin
+from openedx.core.djangoapps.dark_lang.models import DarkLangConfig
 from openedx.core.djangoapps.models.course_details import CourseDetails
+from openedx.core.djangolib.testing.utils import CacheIsolationTestCase
 from openedx.core.lib.courses import course_image_url
 from static_replace.models import AssetBaseUrlConfig
 from xmodule.assetstore.assetmgr import AssetManager
@@ -36,15 +38,15 @@ from xmodule.modulestore.tests.django_utils import ModuleStoreTestCase
 from xmodule.modulestore.tests.factories import CourseFactory, check_mongo_calls_range
 
 from ..models import CourseOverview, CourseOverviewImageSet, CourseOverviewImageConfig
+from .factories import CourseOverviewFactory
 
 
-@attr(shard=3)
 @ddt.ddt
-class CourseOverviewTestCase(ModuleStoreTestCase):
+class CourseOverviewTestCase(CatalogIntegrationMixin, ModuleStoreTestCase, CacheIsolationTestCase):
     """
     Tests for CourseOverview model.
     """
-
+    shard = 3
     TODAY = timezone.now()
     LAST_MONTH = 'last_month'
     LAST_WEEK = 'last_week'
@@ -270,6 +272,39 @@ class CourseOverviewTestCase(ModuleStoreTestCase):
         course = CourseFactory.create(default_store=modulestore_type, run="TestRun", **kwargs)
         self.check_course_overview_against_course(course)
 
+    @ddt.data(True, False)
+    def test_language_field(self, catalog_integration_enabled):
+        """
+        Test that the language field is not updated from the modulestore
+        when catalog integration is enabled. In that case, it gets updated
+        by the sync_course_runs management command, which synchronizes with
+        the Catalog service.
+        """
+        self.create_catalog_integration(enabled=catalog_integration_enabled)
+
+        course = CourseFactory.create(language='en')
+        course_overview = CourseOverview.get_from_id(course.id)
+
+        if catalog_integration_enabled:
+            self.assertNotEqual(course_overview.language, course.language)
+        else:
+            self.assertEqual(course_overview.language, course.language)
+
+    @ddt.data(
+        ('fa', 'fa-ir', 'fa'),
+        ('fa', 'fa', 'fa'),
+        ('es-419', 'es-419', 'es-419'),
+        ('es-419', 'es-es', 'es-419'),
+        ('es-419', 'es', 'es-419'),
+        ('es-419', None, None),
+        ('es-419', 'fr', None),
+    )
+    @ddt.unpack
+    def test_closest_released_language(self, released_languages, course_language, expected_language):
+        DarkLangConfig(released_languages=released_languages, enabled=True, changed_by=self.user).save()
+        course_overview = CourseOverviewFactory.create(language=course_language)
+        self.assertEqual(course_overview.closest_released_language, expected_language)
+
     @ddt.data(ModuleStoreEnum.Type.split, ModuleStoreEnum.Type.mongo)
     def test_get_non_existent_course(self, modulestore_type):
         """
@@ -355,12 +390,11 @@ class CourseOverviewTestCase(ModuleStoreTestCase):
                 'openedx.core.djangoapps.content.course_overviews.models.CourseOverview._get_pk_val'
             ) as mock_get_pk_val:
                 mock_get_pk_val.return_value = None
-                # This method was not present in django 1.4. Django 1.8 calls this method if
-                # _get_pk_val returns None.  This method will return empty str if there is no
-                # default value present. So mock it to avoid returning the empty str as primary key
-                # value. Due to empty str, model.save will do an update instead of insert which is
-                # incorrect and get exception in
-                # openedx.core.djangoapps.xmodule_django.models.OpaqueKeyField.get_prep_value
+                # Django 1.8+ calls this method if _get_pk_val returns None.  This method will
+                # return empty str if there is no default value present. So mock it to avoid
+                # returning the empty str as primary key value. Due to empty str, model.save will do
+                # an update instead of insert which is incorrect and get exception in
+                # opaque_keys.edx.django.models.OpaqueKeyField.get_prep_value
                 with mock.patch('django.db.models.Field.get_pk_value_on_save') as mock_get_pk_value_on_save:
 
                     mock_get_pk_value_on_save.return_value = None
@@ -460,8 +494,9 @@ class CourseOverviewTestCase(ModuleStoreTestCase):
         )
 
     def test_get_all_courses_by_mobile_available(self):
-        non_mobile_course = CourseFactory.create(emit_signals=True)
-        mobile_course = CourseFactory.create(mobile_available=True, emit_signals=True)
+        mobile_course = CourseFactory.create(emit_signals=True)
+        non_mobile_course =\
+            CourseFactory.create(mobile_available=False, emit_signals=True)
 
         test_cases = (
             (None, {non_mobile_course.id, mobile_course.id}),
@@ -477,7 +512,8 @@ class CourseOverviewTestCase(ModuleStoreTestCase):
                     CourseOverview.get_all_courses(filter_=filter_)
                 },
                 expected_courses,
-                "testing CourseOverview.get_all_courses with filter_={}".format(filter_),
+                "testing CourseOverview.get_all_courses with filter_={}"
+                .format(filter_),
             )
 
     def test_get_from_ids_if_exists(self):
@@ -509,14 +545,26 @@ class CourseOverviewTestCase(ModuleStoreTestCase):
         self.assertEqual(len(course_ids_to_overviews), 1)
         self.assertIn(course_with_overview_1.id, course_ids_to_overviews)
 
+    def test_get_from_id_if_exists(self):
+        course_with_overview = CourseFactory.create(emit_signals=True)
+        course_id_to_overview = CourseOverview.get_from_id_if_exists(course_with_overview.id)
+        self.assertEqual(course_with_overview.id, course_id_to_overview.id)
 
-@attr(shard=3)
+        overview_prev_version = CourseOverview.get_from_id_if_exists(course_with_overview.id)
+        overview_prev_version.version = CourseOverview.VERSION - 1
+        overview_prev_version.save()
+
+        course_id_to_overview = CourseOverview.get_from_id_if_exists(course_with_overview.id)
+        self.assertEqual(course_id_to_overview, None)
+
+
 @ddt.ddt
 class CourseOverviewImageSetTestCase(ModuleStoreTestCase):
     """
     Course thumbnail generation tests.
     """
     ENABLED_SIGNALS = ['course_published']
+    shard = 3
 
     def setUp(self):
         """Create an active CourseOverviewImageConfig with non-default values."""
@@ -989,12 +1037,12 @@ class CourseOverviewImageSetTestCase(ModuleStoreTestCase):
             return course_overview
 
 
-@attr(shard=3)
 @ddt.ddt
 class CourseOverviewTabTestCase(ModuleStoreTestCase):
     """
     Tests for CourseOverviewTab model.
     """
+    shard = 3
 
     ENABLED_SIGNALS = ['course_published']
 

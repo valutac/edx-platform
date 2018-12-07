@@ -42,6 +42,8 @@
 
                 render: function() {
                     var tabs,
+                        $tabbedViewElement,
+                        $wrapperProfileBioElement = this.$el.find('.wrapper-profile-bio'),
                         self = this;
 
                     this.sectionTwoView = new SectionTwoTab({
@@ -56,6 +58,13 @@
                     $('.ui-loading-indicator').addClass('is-hidden');
                     $('.wrapper-profile-section-container-one').removeClass('is-hidden');
                     $('.wrapper-profile-section-container-two').removeClass('is-hidden');
+
+                    // Only show accomplishments if this is a full profile
+                    if (this.showFullProfile()) {
+                        $('.learner-achievements').removeClass('is-hidden');
+                    } else {
+                        $('.learner-achievements').addClass('is-hidden');
+                    }
 
                     if (this.showFullProfile() && (this.options.accountSettingsModel.get('accomplishments_shared'))) {
                         tabs = [
@@ -80,8 +89,11 @@
                             viewLabel: gettext('Profile')
                         });
 
-                        this.tabbedView.render();
-                        this.$el.find('.account-settings-container').append(this.tabbedView.el);
+                        $tabbedViewElement = this.tabbedView.render().el;
+                        HtmlUtils.setHtml(
+                            $wrapperProfileBioElement,
+                            HtmlUtils.HTML($tabbedViewElement)
+                        );
 
                         if (this.firstRender) {
                             this.router.on('route:loadTab', _.bind(this.setActiveTab, this));
@@ -96,7 +108,7 @@
                         }
                     } else {
                         // xss-lint: disable=javascript-jquery-html
-                        this.$el.find('.wrapper-profile-bio').html(this.sectionTwoView.render().el);
+                        $wrapperProfileBioElement.html(this.sectionTwoView.render().el);
                     }
                     return this;
                 },
@@ -114,7 +126,7 @@
                         fieldView.requiresParentalConsent = settings.get('requires_parental_consent');
                         fieldView.isAboveMinimumAge = settings.isAboveMinimumAge();
                         fieldView.undelegateEvents();
-                        this.$('.wrapper-profile-field-account-privacy').append(fieldView.render().el);
+                        this.$('.wrapper-profile-field-account-privacy').prepend(fieldView.render().el);
                         fieldView.delegateEvents();
                     }
 
